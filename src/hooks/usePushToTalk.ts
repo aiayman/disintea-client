@@ -1,32 +1,44 @@
 import { useCallback, useEffect, useRef } from "react";
-import {
-  register,
-  unregisterAll,
-  type ShortcutEvent,
-} from "@tauri-apps/plugin-global-shortcut";
-import { load as loadStore } from "@tauri-apps/plugin-store";
+import { isTauri } from "../lib/tauri-compat";
 import { useCallStore } from "../store/callStore";
 
 const STORE_FILE = "disintea-settings.json";
 const PTT_KEYS_KEY = "pttKeys";
+const PTT_LS_KEY = "disintea_ptt_keys";
 
-/** Load saved PTT keys from the persistent store */
+/** Load saved PTT keys (Tauri store or localStorage fallback) */
 export async function loadPttKeys(): Promise<string[]> {
-  const store = await loadStore(STORE_FILE);
-  const val = await store.get<string[]>(PTT_KEYS_KEY);
-  return val ?? [];
+  if (isTauri()) {
+    const { load: loadStore } = await import("@tauri-apps/plugin-store");
+    const store = await loadStore(STORE_FILE);
+    const val = await store.get<string[]>(PTT_KEYS_KEY);
+    return val ?? [];
+  }
+  try {
+    const raw = localStorage.getItem(PTT_LS_KEY);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch {
+    return [];
+  }
 }
 
-/** Save PTT keys to the persistent store */
+/** Save PTT keys (Tauri store or localStorage fallback) */
 export async function savePttKeys(keys: string[]): Promise<void> {
-  const store = await loadStore(STORE_FILE);
-  await store.set(PTT_KEYS_KEY, keys);
-  await store.save();
+  if (isTauri()) {
+    const { load: loadStore } = await import("@tauri-apps/plugin-store");
+    const store = await loadStore(STORE_FILE);
+    await store.set(PTT_KEYS_KEY, keys);
+    await store.save();
+    return;
+  }
+  localStorage.setItem(PTT_LS_KEY, JSON.stringify(keys));
 }
 
 /**
- * Manages push-to-talk: registers/unregisters OS-level global shortcuts
+ * Manages push-to-talk: registers/unregisters OS-level global shortcuts (Tauri only)
  * and toggles the mic track when keys are pressed/released.
+ * In a plain browser context, PTT keys are stored but shortcuts are not registered
+ * (OS-level interception is not available in browsers).
  */
 export function usePushToTalk(
   setMicEnabled: (enabled: boolean) => void,
@@ -37,8 +49,12 @@ export function usePushToTalk(
   // Keep ref in sync so the shortcut handler always sees current mute state
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
 
-  /** Re-register all PTT shortcuts */
+  /** Re-register all PTT shortcuts (Tauri only) */
   const registerShortcuts = useCallback(async (keys: string[]) => {
+    if (!isTauri()) return;
+
+    const { register, unregisterAll, type: _t } = await import("@tauri-apps/plugin-global-shortcut");
+    type ShortcutEvent = { state: "Pressed" | "Released" };
     await unregisterAll();
 
     for (const key of keys) {
@@ -66,7 +82,13 @@ export function usePushToTalk(
       if (keys.length > 0) registerShortcuts(keys);
     });
 
-    return () => { unregisterAll(); };
+    return () => {
+      if (isTauri()) {
+        import("@tauri-apps/plugin-global-shortcut").then(({ unregisterAll }) => {
+          unregisterAll();
+        });
+      }
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Add a new PTT key */

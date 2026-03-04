@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { getTurnCredentials } from "../lib/tauri-compat";
 import { useCallStore } from "../store/callStore";
 
 interface TurnCredentials {
@@ -25,7 +25,7 @@ export function useWebRTC() {
 
   // Build RTCConfiguration with TURN credentials from Rust backend
   const buildConfig = useCallback(async (): Promise<RTCConfiguration> => {
-    const creds = await invoke<TurnCredentials>("get_turn_credentials");
+    const creds = await getTurnCredentials();
     return {
       iceServers: [
         { urls: "stun:stun.l.google.com:19302" },

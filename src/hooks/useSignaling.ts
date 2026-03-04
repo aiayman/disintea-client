@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { getServerConfig } from "../lib/tauri-compat";
 import { useCallStore } from "../store/callStore";
 
 // ---- Message types (mirroring the server protocol) ----
@@ -27,7 +27,7 @@ export function useSignaling(handlers: SignalingHandlers) {
   }, []);
 
   const connect = useCallback(async () => {
-    const config = await invoke<{ ws_url: string }>("get_server_config");
+    const config = await getServerConfig();
     const ws = new WebSocket(config.ws_url);
     wsRef.current = ws;
     setStatus("connecting");

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useCallStore } from "../store/callStore";
 import { usePushToTalk } from "../hooks/usePushToTalk";
+import { isTauri } from "../lib/tauri-compat";
 
 interface Props {
   onClose: () => void;
@@ -52,7 +53,8 @@ export function Settings({ onClose, setMicEnabled }: Props) {
           <button className="text-gray-400 hover:text-white text-xl" onClick={onClose}>×</button>
         </div>
 
-        {/* Push-to-Talk keys */}
+        {/* Push-to-Talk keys — Tauri desktop only (OS-level shortcut interception) */}
+        {isTauri() && (
         <section className="flex flex-col gap-3">
           <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">Push to Talk</h3>
           <p className="text-xs text-gray-500">
@@ -90,6 +92,7 @@ export function Settings({ onClose, setMicEnabled }: Props) {
             {binding ? "Press a key to bind…" : "+ Add PTT Key"}
           </button>
         </section>
+        )}
 
         {/* Microphone device */}
         <section className="flex flex-col gap-3">
