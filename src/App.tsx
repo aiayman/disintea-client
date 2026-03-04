@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import "./App.css";
 import { useCallStore } from "./store/callStore";
 import { useWebRTC } from "./hooks/useWebRTC";
@@ -33,16 +33,28 @@ export default function App() {
   // PTT — must be always mounted once we're in a call
   usePushToTalk(setMicEnabled);
 
-  // Handlers passed to signaling — stable refs via useCallback
+  // Use refs so handler closures always see the latest send/startCall/handleOffer
+  // without needing to re-create signalingHandlers on every render.
+  const sendRef = useRef<(msg: object) => void>(() => {});
+  const startCallRef = useRef(startCall);
+  const handleOfferRef = useRef(handleOffer);
+  startCallRef.current = startCall;
+  handleOfferRef.current = handleOffer;
+
   const signalingHandlers = useMemo(() => ({
-    onOffer: (sdp: string, from: string) => handleOffer(sdp, from, send),
+    onOffer: (sdp: string, from: string) => handleOfferRef.current(sdp, from, sendRef.current),
     onAnswer: handleAnswer,
     onIceCandidate: handleIceCandidate,
-    onPeerJoined: (peerId: string) => startCall(peerId, send),
+    // I just joined → I offer to every existing peer
+    onExistingPeer: (peerId: string) => startCallRef.current(peerId, sendRef.current),
+    // A peer joined after me → they will offer; I do nothing
+    onIncomingPeer: (_peerId: string) => {},
     onPeerLeft: (peerId: string) => handlePeerLeft(peerId),
-  }), []); // eslint-disable-line react-hooks/exhaustive-deps
+  }), [handleAnswer, handleIceCandidate, handlePeerLeft]);
 
   const { connect, disconnect, send } = useSignaling(signalingHandlers);
+  // Keep ref in sync every render
+  sendRef.current = send;
 
   const handleJoin = useCallback(async () => {
     setScreen("call");
@@ -59,11 +71,10 @@ export default function App() {
   const handleToggleMute = useCallback(() => {
     const next = !isMuted;
     setMuted(next);
-    if (next) {
-      // Complete mute — disable mic regardless of PTT
-      setMicEnabled(false);
-    }
-    // When unmuting, mic stays off until PTT is pressed (or user removes mute)
+    // Directly reflect mute state on the track.
+    // On Tauri with PTT: when unmuted, PTT key controls the track.
+    // In browser (no PTT): unmuting re-enables mic immediately.
+    setMicEnabled(!next);
   }, [isMuted, setMuted, setMicEnabled]);
 
   const handleToggleScreenShare = useCallback(async () => {

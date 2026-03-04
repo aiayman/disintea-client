@@ -12,7 +12,10 @@ export type SignalingHandlers = {
   onOffer: (sdp: string, from: string) => void;
   onAnswer: (sdp: string, from: string) => void;
   onIceCandidate: (candidate: string, sdpMid: string | null, sdpMLineIndex: number | null, from: string) => void;
-  onPeerJoined: (peerId: string) => void;
+  /** I just joined — this peer was already in the room. I should send the offer. */
+  onExistingPeer: (peerId: string) => void;
+  /** A new peer joined while I was already here. They will send the offer; I just wait. */
+  onIncomingPeer: (peerId: string) => void;
   onPeerLeft: (peerId: string) => void;
 };
 
@@ -49,12 +52,14 @@ export function useSignaling(handlers: SignalingHandlers) {
           setStatus("connected");
           for (const pid of (msg.existing_peers as string[]) ?? []) {
             addRemotePeer(pid);
-            handlers.onPeerJoined(pid);
+            // I just joined — I am the offerer for every existing peer
+            handlers.onExistingPeer(pid);
           }
           break;
         case "peer_joined":
           addRemotePeer(msg.peer_id as string);
-          handlers.onPeerJoined(msg.peer_id as string);
+          // A new peer arrived — they will send us an offer; we just wait
+          handlers.onIncomingPeer(msg.peer_id as string);
           break;
         case "peer_left":
           removeRemotePeer(msg.peer_id as string);

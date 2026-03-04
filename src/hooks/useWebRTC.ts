@@ -47,8 +47,8 @@ export function useWebRTC() {
       video: false,
     };
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
-    // Start with mic muted (PTT model — user enables track explicitly)
-    stream.getAudioTracks().forEach((t) => { t.enabled = false; });
+    // Start mic enabled. PTT (Tauri) or the mute button will disable it.
+    stream.getAudioTracks().forEach((t) => { t.enabled = true; });
     localStreamRef.current = stream;
     return stream;
   }, [audioDeviceId]);
