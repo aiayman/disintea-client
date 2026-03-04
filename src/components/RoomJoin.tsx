@@ -34,7 +34,7 @@ export function RoomJoin({ onJoin }: Props) {
   return (
     <div className="flex flex-col items-center justify-center h-screen gap-8 px-6">
       <div className="flex flex-col items-center gap-2">
-        <div className="text-4xl font-bold tracking-tight text-white">dismony</div>
+        <div className="text-4xl font-bold tracking-tight text-white">disintea</div>
         <div className="text-sm text-gray-400">voice calls &amp; screen sharing</div>
       </div>
 

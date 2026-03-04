@@ -31,7 +31,7 @@ fn get_turn_credentials() -> TurnCredentials {
         + ttl;
 
     // coturn username format: <timestamp>:<arbitrary-name>
-    let username = format!("{timestamp}:dismony");
+    let username = format!("{timestamp}:disintea");
 
     let mut mac = HmacSha1::new_from_slice(secret.as_bytes()).expect("HMAC init failed");
     mac.update(username.as_bytes());

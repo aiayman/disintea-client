@@ -1,4 +1,4 @@
-# dismony-client
+# disintea-client
 
 Desktop voice call + screen sharing app — Discord without servers. Built with Tauri v2 + React + TypeScript.
 

@@ -7,7 +7,7 @@ import {
 import { load as loadStore } from "@tauri-apps/plugin-store";
 import { useCallStore } from "../store/callStore";
 
-const STORE_FILE = "dismony-settings.json";
+const STORE_FILE = "disintea-settings.json";
 const PTT_KEYS_KEY = "pttKeys";
 
 /** Load saved PTT keys from the persistent store */

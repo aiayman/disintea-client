@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    dismony_client_lib::run()
+    disintea_client_lib::run()
 }
