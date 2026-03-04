@@ -38,10 +38,9 @@ jobs:
 
       - name: Build Tauri app (Windows)
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          VITE_SIGNALING_URL: ${{ secrets.VITE_SIGNALING_URL }}
-          VITE_TURN_URL: ${{ secrets.VITE_TURN_URL }}
+          SIGNALING_URL: ${{ secrets.SIGNALING_URL }}
+          TURN_URL: ${{ secrets.TURN_URL }}
+          TURN_SECRET: ${{ secrets.TURN_SECRET }}
         run: pnpm tauri build
 
       - name: Upload Windows artifacts
@@ -88,10 +87,9 @@ jobs:
 
       - name: Build Tauri app (Linux)
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          VITE_SIGNALING_URL: ${{ secrets.VITE_SIGNALING_URL }}
-          VITE_TURN_URL: ${{ secrets.VITE_TURN_URL }}
+          SIGNALING_URL: ${{ secrets.SIGNALING_URL }}
+          TURN_URL: ${{ secrets.TURN_URL }}
+          TURN_SECRET: ${{ secrets.TURN_SECRET }}
         run: pnpm tauri build
 
       - name: Upload Linux artifacts
