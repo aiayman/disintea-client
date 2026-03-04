@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useCallStore } from "../store/callStore";
+import { useAppStore } from "../store/appStore";
 import { usePushToTalk } from "../hooks/usePushToTalk";
 import { isTauri } from "../lib/tauri-compat";
 
@@ -9,7 +9,7 @@ interface Props {
 }
 
 export function Settings({ onClose, setMicEnabled }: Props) {
-  const { pttKeys, audioDeviceId, setAudioDeviceId } = useCallStore();
+  const { pttKeys, audioDeviceId, setAudioDeviceId } = useAppStore();
   const { addKey, removeKey } = usePushToTalk(setMicEnabled);
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
   const [binding, setBinding] = useState(false);

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { isTauri } from "../lib/tauri-compat";
-import { useCallStore } from "../store/callStore";
+import { useAppStore } from "../store/appStore";
 
 const STORE_FILE = "disintea-settings.json";
 const PTT_KEYS_KEY = "pttKeys";
@@ -43,7 +43,7 @@ export async function savePttKeys(keys: string[]): Promise<void> {
 export function usePushToTalk(
   setMicEnabled: (enabled: boolean) => void,
 ) {
-  const { pttKeys, setPttKeys, setPttActive, isMuted } = useCallStore();
+  const { pttKeys, setPttKeys, setPttActive, isMuted } = useAppStore();
   const isMutedRef = useRef(isMuted);
 
   // Keep ref in sync so the shortcut handler always sees current mute state
@@ -53,7 +53,7 @@ export function usePushToTalk(
   const registerShortcuts = useCallback(async (keys: string[]) => {
     if (!isTauri()) return;
 
-    const { register, unregisterAll, type: _t } = await import("@tauri-apps/plugin-global-shortcut");
+    const { register, unregisterAll } = await import("@tauri-apps/plugin-global-shortcut");
     type ShortcutEvent = { state: "Pressed" | "Released" };
     await unregisterAll();
 

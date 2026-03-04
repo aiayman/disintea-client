@@ -1,21 +1,29 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import "./App.css";
-import { useCallStore } from "./store/callStore";
+import { useAppStore } from "./store/appStore";
 import { useWebRTC } from "./hooks/useWebRTC";
 import { useSignaling } from "./hooks/useSignaling";
 import { usePushToTalk } from "./hooks/usePushToTalk";
-import { RoomJoin } from "./components/RoomJoin";
-import { CallControls } from "./components/CallControls";
-import { PeerVideo } from "./components/PeerVideo";
-import { Settings } from "./components/Settings";
-
-type Screen = "join" | "call";
+import { IdentitySetup } from "./components/IdentitySetup";
+import { ContactList } from "./components/ContactList";
+import { ChatPanel } from "./components/ChatPanel";
+import { CallScreen } from "./components/CallScreen";
+import { IncomingCallOverlay } from "./components/IncomingCallOverlay";
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>("join");
-  const [showSettings, setShowSettings] = useState(false);
-
-  const { isMuted, setMuted, isScreenSharing, remotePeerIds, reset } = useCallStore();
+  const {
+    userId,
+    callState,
+    callPeerId,
+    activeChat,
+    isMuted,
+    setMuted,
+    setCallState,
+    setCallPeerId,
+    setIncomingCall,
+    resetCall,
+    setActiveChat,
+  } = useAppStore();
 
   const {
     remoteStreams,
@@ -23,122 +31,160 @@ export default function App() {
     handleOffer,
     handleAnswer,
     handleIceCandidate,
-    handlePeerLeft,
     setMicEnabled,
-    startScreenShare,
-    stopScreenShare,
     hangUp,
   } = useWebRTC();
 
-  // PTT — must be always mounted once we're in a call
+  // Push-to-talk (only active in Tauri)
   usePushToTalk(setMicEnabled);
 
-  // Use refs so handler closures always see the latest send/startCall/handleOffer
-  // without needing to re-create signalingHandlers on every render.
-  const sendRef = useRef<(msg: object) => void>(() => {});
+  // Keep latest refs to avoid stale closures
   const startCallRef = useRef(startCall);
   const handleOfferRef = useRef(handleOffer);
   startCallRef.current = startCall;
   handleOfferRef.current = handleOffer;
 
-  const signalingHandlers = useMemo(() => ({
-    onOffer: (sdp: string, from: string) => handleOfferRef.current(sdp, from, sendRef.current),
-    onAnswer: handleAnswer,
-    onIceCandidate: handleIceCandidate,
-    // I just joined → I offer to every existing peer
-    onExistingPeer: (peerId: string) => startCallRef.current(peerId, sendRef.current),
-    // A peer joined after me → they will offer; I do nothing
-    onIncomingPeer: (_peerId: string) => {},
-    onPeerLeft: (peerId: string) => handlePeerLeft(peerId),
-  }), [handleAnswer, handleIceCandidate, handlePeerLeft]);
+  // ---- Signaling callbacks ----
+  const signalingCallbacks = {
+    onIncomingCall: useCallback((from: string, fromName: string, sdp: string) => {
+      // Only accept a new incoming call when we're idle
+      const state = useAppStore.getState();
+      if (state.callState !== "idle") return;
+      useAppStore.getState().setIncomingCall({ from, fromName, sdp });
+      useAppStore.getState().setCallState("ringing");
+    }, []),
 
-  const { connect, disconnect, send } = useSignaling(signalingHandlers);
-  // Keep ref in sync every render
+    onCallAnswered: useCallback((from: string, sdp: string) => {
+      handleAnswer(sdp, from);
+      useAppStore.getState().setCallState("in_call");
+    }, [handleAnswer]),
+
+    onCallRejected: useCallback((_from: string) => {
+      hangUp();
+      resetCall();
+    }, [hangUp, resetCall]),
+
+    onHangUp: useCallback((_from: string) => {
+      hangUp();
+      resetCall();
+    }, [hangUp, resetCall]),
+
+    onIceCandidate: useCallback((
+      from: string,
+      candidate: string,
+      sdpMid: string | null,
+      sdpMLineIndex: number | null,
+    ) => {
+      handleIceCandidate(candidate, sdpMid, sdpMLineIndex, from);
+    }, [handleIceCandidate]),
+  };
+
+  const {
+    connect,
+    disconnect,
+    send,
+    sendCallReject,
+    sendHangUp,
+    sendChatMessage,
+  } = useSignaling(signalingCallbacks);
+
+  // Keep send ref stable for WebRTC callbacks
+  const sendRef = useRef(send);
   sendRef.current = send;
 
-  const handleJoin = useCallback(async () => {
-    setScreen("call");
-    await connect();
-  }, [connect]);
+  // Connect to signaling server once identity is set
+  useEffect(() => {
+    if (!userId) return;
+    connect();
+    return () => { disconnect(); };
+  }, [userId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---- Call handlers ----
+  const handleStartCall = useCallback(async (contactId: string) => {
+    setCallState("calling");
+    setCallPeerId(contactId);
+    await startCallRef.current(contactId, sendRef.current);
+  }, [setCallState, setCallPeerId]);
+
+  const handleAcceptCall = useCallback(async () => {
+    const ic = useAppStore.getState().incomingCall;
+    if (!ic) return;
+    setCallState("in_call");
+    setCallPeerId(ic.from);
+    setIncomingCall(null);
+    await handleOfferRef.current(ic.sdp, ic.from, sendRef.current);
+  }, [setCallState, setCallPeerId, setIncomingCall]);
+
+  const handleRejectCall = useCallback(() => {
+    const ic = useAppStore.getState().incomingCall;
+    if (ic) sendCallReject(ic.from);
+    setIncomingCall(null);
+    resetCall();
+  }, [sendCallReject, setIncomingCall, resetCall]);
 
   const handleHangUp = useCallback(() => {
+    if (callPeerId) sendHangUp(callPeerId);
     hangUp();
-    disconnect();
-    reset();
-    setScreen("join");
-  }, [hangUp, disconnect, reset]);
+    resetCall();
+  }, [callPeerId, sendHangUp, hangUp, resetCall]);
 
   const handleToggleMute = useCallback(() => {
     const next = !isMuted;
     setMuted(next);
-    // Directly reflect mute state on the track.
-    // On Tauri with PTT: when unmuted, PTT key controls the track.
-    // In browser (no PTT): unmuting re-enables mic immediately.
     setMicEnabled(!next);
   }, [isMuted, setMuted, setMicEnabled]);
 
-  const handleToggleScreenShare = useCallback(async () => {
-    if (isScreenSharing) {
-      await stopScreenShare();
-    } else {
-      await startScreenShare();
-    }
-  }, [isScreenSharing, startScreenShare, stopScreenShare]);
+  const handleSendChatMessage = useCallback((to: string, text: string, msgId: string) => {
+    sendChatMessage(to, text, msgId);
+  }, [sendChatMessage]);
 
-  if (screen === "join") {
-    return <RoomJoin onJoin={handleJoin} />;
+  // ---- Routing ----
+  // First-run: no identity
+  if (!userId) {
+    return <IdentitySetup />;
   }
 
-  return (
-    <div className="flex flex-col h-screen bg-gray-900">
-      {/* Peer tiles */}
-      <div className="flex-1 overflow-auto p-4 pb-24">
-        {remotePeerIds.length === 0 ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="flex flex-col items-center gap-4 text-gray-500">
-              <div className="text-5xl">🎙</div>
-              <p className="text-sm">Waiting for someone to join…</p>
-              <p className="text-xs font-mono bg-gray-800 px-4 py-2 rounded-lg text-gray-400">
-                Share room code: <span className="text-white font-bold">{useCallStore.getState().roomCode}</span>
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 auto-rows-fr">
-            {remotePeerIds.map((pid) => {
-              const stream = remoteStreams.get(pid);
-              return stream ? (
-                <PeerVideo key={pid} stream={stream} peerId={pid} />
-              ) : (
-                <div key={pid} className="bg-gray-800 rounded-2xl flex items-center justify-center aspect-video">
-                  <div className="flex flex-col items-center gap-2">
-                    <div className="w-12 h-12 rounded-full bg-indigo-700 flex items-center justify-center text-lg font-bold">
-                      {pid.slice(0, 2).toUpperCase()}
-                    </div>
-                    <span className="text-xs text-gray-500 font-mono">connecting…</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Bottom controls bar */}
-      <CallControls
-        onHangUp={handleHangUp}
-        onToggleMute={handleToggleMute}
-        onToggleScreenShare={handleToggleScreenShare}
-        onOpenSettings={() => setShowSettings(true)}
-      />
-
-      {/* Settings overlay */}
-      {showSettings && (
-        <Settings
-          onClose={() => setShowSettings(false)}
-          setMicEnabled={setMicEnabled}
+  // Active call (calling, in call)
+  if (callState === "calling" || callState === "in_call") {
+    return (
+      <>
+        <CallScreen
+          remoteStreams={remoteStreams}
+          onHangUp={handleHangUp}
+          onToggleMute={handleToggleMute}
         />
+      </>
+    );
+  }
+
+  // Chat panel
+  if (activeChat) {
+    return (
+      <>
+        <ChatPanel
+          contactId={activeChat}
+          onBack={() => setActiveChat(null)}
+          onCall={handleStartCall}
+          onSendMessage={handleSendChatMessage}
+        />
+        {callState === "ringing" && (
+          <IncomingCallOverlay onAccept={handleAcceptCall} onReject={handleRejectCall} />
+        )}
+      </>
+    );
+  }
+
+  // Contacts list (main screen)
+  return (
+    <>
+      <ContactList
+        userId={userId}
+        onStartChat={setActiveChat}
+        onStartCall={handleStartCall}
+      />
+      {callState === "ringing" && (
+        <IncomingCallOverlay onAccept={handleAcceptCall} onReject={handleRejectCall} />
       )}
-    </div>
+    </>
   );
 }

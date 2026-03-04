@@ -1,18 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getTurnCredentials } from "../lib/tauri-compat";
-import { useCallStore } from "../store/callStore";
-
-interface TurnCredentials {
-  urls: string;
-  username: string;
-  credential: string;
-}
+import { useAppStore } from "../store/appStore";
 
 /** Map of peerId → remote MediaStream */
 export type RemoteStreams = Map<string, MediaStream>;
 
 export function useWebRTC() {
-  const { audioDeviceId, setScreenSharing } = useCallStore();
+  const { audioDeviceId, setScreenSharing } = useAppStore();
 
   // Local audio stream (mic)
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -106,7 +100,7 @@ export function useWebRTC() {
     const pc = await getOrCreatePc(peerId, sendSignal);
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    sendSignal({ type: "offer", sdp: offer.sdp, to: peerId });
+    sendSignal({ type: "call_offer", sdp: offer.sdp, to: peerId });
   }, [getOrCreatePc]);
 
   /** Handle an incoming offer — we are the answerer */
@@ -115,7 +109,7 @@ export function useWebRTC() {
     await pc.setRemoteDescription({ type: "offer", sdp });
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-    sendSignal({ type: "answer", sdp: answer.sdp, to: from });
+    sendSignal({ type: "call_answer", sdp: answer.sdp, to: from });
   }, [getOrCreatePc]);
 
   /** Handle an incoming answer */
