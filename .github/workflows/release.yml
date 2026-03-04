@@ -132,10 +132,10 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            release-artifacts/windows-msi/*.msi
-            release-artifacts/windows-msi/*.exe
-            release-artifacts/linux-bundles/*.AppImage
-            release-artifacts/linux-bundles/*.deb
+            release-artifacts/**/*.msi
+            release-artifacts/**/*.exe
+            release-artifacts/**/*.AppImage
+            release-artifacts/**/*.deb
           body: |
             ## Disintea ${{ github.ref_name }}
 
