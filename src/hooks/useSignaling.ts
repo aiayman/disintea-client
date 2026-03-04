@@ -18,7 +18,7 @@ export type SignalingHandlers = {
 
 export function useSignaling(handlers: SignalingHandlers) {
   const wsRef = useRef<WebSocket | null>(null);
-  const { roomCode, myPeerId, setStatus, addRemotePeer, removeRemotePeer } = useCallStore();
+  const { setStatus, addRemotePeer, removeRemotePeer } = useCallStore();
 
   const send = useCallback((msg: object) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -27,6 +27,10 @@ export function useSignaling(handlers: SignalingHandlers) {
   }, []);
 
   const connect = useCallback(async () => {
+    // Read fresh values from the store at call time — avoids stale closure
+    // when connect() is called immediately after setRoomCode/setMyPeerId.
+    const { roomCode, myPeerId } = useCallStore.getState();
+
     const config = await getServerConfig();
     const ws = new WebSocket(config.ws_url);
     wsRef.current = ws;
@@ -82,7 +86,7 @@ export function useSignaling(handlers: SignalingHandlers) {
 
     ws.onclose = () => setStatus("disconnected");
     ws.onerror = (e) => console.error("[signaling] ws error", e);
-  }, [roomCode, myPeerId, handlers, setStatus, addRemotePeer, removeRemotePeer]);
+  }, [handlers, setStatus, addRemotePeer, removeRemotePeer]);
 
   const disconnect = useCallback(() => {
     wsRef.current?.send(JSON.stringify({ type: "leave" }));
