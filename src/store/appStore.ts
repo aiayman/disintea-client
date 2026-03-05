@@ -1,9 +1,9 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-// ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────────
 // Types
-// ---------------------------------------------------------------------------
+// ─────────────────────────────────────────────────────────────────────────────
 export interface Contact {
   id: string;
   name: string;
@@ -27,39 +27,30 @@ export interface IncomingCall {
 export type CallState = "idle" | "calling" | "ringing" | "in_call";
 export type WsStatus = "disconnected" | "connecting" | "connected";
 
-// ---------------------------------------------------------------------------
-// Identity (persisted)
-// ---------------------------------------------------------------------------
-interface IdentitySlice {
+// ─────────────────────────────────────────────────────────────────────────────
+// Full store shape
+// ─────────────────────────────────────────────────────────────────────────────
+export interface AppStore {
+  // Identity (persisted)
   userId: string;
   username: string;
   setIdentity: (userId: string, username: string) => void;
-}
 
-// ---------------------------------------------------------------------------
-// Contacts (persisted)
-// ---------------------------------------------------------------------------
-interface ContactsSlice {
+  // Contacts (persisted as offline cache; server is source of truth)
   contacts: Contact[];
-  addContact: (id: string, name: string) => void;
+  setContacts: (contacts: Contact[]) => void;
+  upsertContact: (id: string, name: string, online: boolean) => void;
   removeContact: (id: string) => void;
   setContactOnline: (id: string, online: boolean, name?: string) => void;
-}
 
-// ---------------------------------------------------------------------------
-// Messages (in-memory)
-// ---------------------------------------------------------------------------
-interface MessagesSlice {
+  // Messages (in-memory; loaded from server)
   messages: Record<string, Message[]>;
   activeChat: string | null;
   setActiveChat: (id: string | null) => void;
   addMessage: (contactId: string, msg: Message) => void;
-}
+  setHistory: (contactId: string, msgs: Message[]) => void;
 
-// ---------------------------------------------------------------------------
-// Call state (in-memory)
-// ---------------------------------------------------------------------------
-interface CallSlice {
+  // Call
   callState: CallState;
   callPeerId: string | null;
   incomingCall: IncomingCall | null;
@@ -67,20 +58,12 @@ interface CallSlice {
   setCallPeerId: (id: string | null) => void;
   setIncomingCall: (c: IncomingCall | null) => void;
   resetCall: () => void;
-}
 
-// ---------------------------------------------------------------------------
-// WebSocket status (in-memory)
-// ---------------------------------------------------------------------------
-interface WsSlice {
+  // WS
   wsStatus: WsStatus;
   setWsStatus: (s: WsStatus) => void;
-}
 
-// ---------------------------------------------------------------------------
-// Audio (persisted)
-// ---------------------------------------------------------------------------
-interface AudioSlice {
+  // Audio
   isMuted: boolean;
   isPttActive: boolean;
   isScreenSharing: boolean;
@@ -93,16 +76,9 @@ interface AudioSlice {
   setAudioDeviceId: (id: string) => void;
 }
 
-// ---------------------------------------------------------------------------
-// Combined store
-// ---------------------------------------------------------------------------
-export type AppStore = IdentitySlice &
-  ContactsSlice &
-  MessagesSlice &
-  CallSlice &
-  WsSlice &
-  AudioSlice;
-
+// ─────────────────────────────────────────────────────────────────────────────
+// Store
+// ─────────────────────────────────────────────────────────────────────────────
 export const useAppStore = create<AppStore>()(
   persist(
     (set) => ({
@@ -113,10 +89,18 @@ export const useAppStore = create<AppStore>()(
 
       // Contacts
       contacts: [],
-      addContact: (id, name) =>
+      setContacts: (contacts) => set({ contacts }),
+      upsertContact: (id, name, online) =>
         set((s) => {
-          if (s.contacts.find((c) => c.id === id)) return s;
-          return { contacts: [...s.contacts, { id, name, online: false }] };
+          const existing = s.contacts.find((c) => c.id === id);
+          if (existing) {
+            return {
+              contacts: s.contacts.map((c) =>
+                c.id === id ? { ...c, name, online } : c
+              ),
+            };
+          }
+          return { contacts: [...s.contacts, { id, name, online }] };
         }),
       removeContact: (id) =>
         set((s) => ({ contacts: s.contacts.filter((c) => c.id !== id) })),
@@ -132,12 +116,14 @@ export const useAppStore = create<AppStore>()(
       activeChat: null,
       setActiveChat: (id) => set({ activeChat: id }),
       addMessage: (contactId, msg) =>
-        set((s) => ({
-          messages: {
-            ...s.messages,
-            [contactId]: [...(s.messages[contactId] ?? []), msg],
-          },
-        })),
+        set((s) => {
+          const existing = s.messages[contactId] ?? [];
+          // deduplicate by id
+          if (existing.find((m) => m.id === msg.id)) return s;
+          return { messages: { ...s.messages, [contactId]: [...existing, msg] } };
+        }),
+      setHistory: (contactId, msgs) =>
+        set((s) => ({ messages: { ...s.messages, [contactId]: msgs } })),
 
       // Call
       callState: "idle",
@@ -146,7 +132,8 @@ export const useAppStore = create<AppStore>()(
       setCallState: (callState) => set({ callState }),
       setCallPeerId: (callPeerId) => set({ callPeerId }),
       setIncomingCall: (incomingCall) => set({ incomingCall }),
-      resetCall: () => set({ callState: "idle", callPeerId: null, incomingCall: null }),
+      resetCall: () =>
+        set({ callState: "idle", callPeerId: null, incomingCall: null }),
 
       // WS
       wsStatus: "disconnected",
@@ -166,7 +153,7 @@ export const useAppStore = create<AppStore>()(
     }),
     {
       name: "disintea-app",
-      // Only persist identity, contacts, audio settings (not in-memory state)
+      // Persist identity + contacts (offline cache) + audio prefs
       partialize: (s) => ({
         userId: s.userId,
         username: s.username,

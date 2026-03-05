@@ -2,22 +2,16 @@ import { useCallback, useRef } from "react";
 import { getServerConfig } from "../lib/tauri-compat";
 import { useAppStore } from "../store/appStore";
 
-// Raw shape of messages from the server
 interface ServerMsg {
   type: string;
   [key: string]: unknown;
 }
 
 export type SignalingCallbacks = {
-  /** Someone is calling us — we should show the incoming-call overlay */
   onIncomingCall: (from: string, fromName: string, sdp: string) => void;
-  /** Our outgoing call was accepted — start WebRTC answer flow */
   onCallAnswered: (from: string, sdp: string) => void;
-  /** Our outgoing call was rejected */
   onCallRejected: (from: string) => void;
-  /** Other side hung up */
   onHangUp: (from: string) => void;
-  /** Relayed ICE candidate */
   onIceCandidate: (
     from: string,
     candidate: string,
@@ -33,36 +27,29 @@ export function useSignaling(callbacks: SignalingCallbacks) {
 
   const { setWsStatus } = useAppStore();
 
-  // ---- low-level send ----
+  // ── low-level send ──────────────────────────────────────────────────────
   const send = useCallback((msg: object) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(msg));
     }
   }, []);
 
-  // ---- connect ----
+  // ── connect ─────────────────────────────────────────────────────────────
   const connect = useCallback(async () => {
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
     }
 
-    // Read fresh values at call time
-    const { userId, username, contacts } = useAppStore.getState();
+    const { userId, username } = useAppStore.getState();
     const config = await getServerConfig();
     const ws = new WebSocket(config.ws_url);
     wsRef.current = ws;
     setWsStatus("connecting");
 
     ws.onopen = () => {
-      ws.send(
-        JSON.stringify({
-          type: "register",
-          user_id: userId,
-          username,
-          contacts: contacts.map((c) => c.id),
-        })
-      );
+      // No contacts in Register — server loads from DB
+      ws.send(JSON.stringify({ type: "register", user_id: userId, username }));
     };
 
     ws.onmessage = (evt) => {
@@ -73,24 +60,86 @@ export function useSignaling(callbacks: SignalingCallbacks) {
         return;
       }
 
+      const store = useAppStore.getState();
+
       switch (msg.type) {
         case "registered":
-          setWsStatus("connected");
+          store.setWsStatus("connected");
           break;
 
-        case "user_online": {
-          const { setContactOnline } = useAppStore.getState();
-          setContactOnline(
+        // Full contact list from server (sent right after registered)
+        case "contact_list": {
+          type CI = { user_id: string; username: string; online: boolean };
+          const contacts = (msg.contacts as CI[]).map((c) => ({
+            id: c.user_id,
+            name: c.username,
+            online: c.online,
+          }));
+          // Reset online status for all cached contacts then apply server truth
+          store.setContacts(
+            store.contacts.map((c) => ({ ...c, online: false }))
+          );
+          for (const c of contacts) {
+            store.upsertContact(c.id, c.name, c.online);
+          }
+          break;
+        }
+
+        case "user_online":
+          store.setContactOnline(
             msg.user_id as string,
             true,
             msg.username as string
           );
           break;
+
+        case "user_offline":
+          store.setContactOnline(msg.user_id as string, false);
+          break;
+
+        // Server confirmed we added a contact
+        case "contact_added":
+          store.upsertContact(
+            msg.user_id as string,
+            msg.username as string,
+            msg.online as boolean
+          );
+          break;
+
+        // Someone added us — add them to OUR list too (mutual discovery)
+        case "added_by_user":
+          store.upsertContact(
+            msg.user_id as string,
+            msg.username as string,
+            msg.online as boolean
+          );
+          break;
+
+        // Historical messages
+        case "message_history": {
+          type HM = { msg_id: string; from_id: string; text: string; timestamp: number };
+          const myId = useAppStore.getState().userId;
+          const withId = msg.with_user_id as string;
+          const msgs = (msg.messages as HM[]).map((m) => ({
+            id: m.msg_id,
+            from: m.from_id,
+            text: m.text,
+            timestamp: m.timestamp,
+            mine: m.from_id === myId,
+          }));
+          store.setHistory(withId, msgs);
+          break;
         }
 
-        case "user_offline": {
-          const { setContactOnline } = useAppStore.getState();
-          setContactOnline(msg.user_id as string, false);
+        case "incoming_message": {
+          const contactId = msg.from as string;
+          store.addMessage(contactId, {
+            id: msg.msg_id as string,
+            from: contactId,
+            text: msg.text as string,
+            timestamp: msg.timestamp as number,
+            mine: false,
+          });
           break;
         }
 
@@ -126,42 +175,40 @@ export function useSignaling(callbacks: SignalingCallbacks) {
           );
           break;
 
-        case "incoming_message": {
-          const { addMessage } = useAppStore.getState();
-          const contactId = msg.from as string;
-          addMessage(contactId, {
-            id: msg.msg_id as string,
-            from: contactId,
-            text: msg.text as string,
-            timestamp: msg.timestamp as number,
-            mine: false,
-          });
-          break;
-        }
-
         case "error":
           console.error("[signaling] server error:", msg.reason);
           break;
       }
     };
 
-    ws.onclose = () => {
-      setWsStatus("disconnected");
-    };
-
-    ws.onerror = (e) => {
-      console.error("[signaling] ws error", e);
-    };
+    ws.onclose = () => setWsStatus("disconnected");
+    ws.onerror = (e) => console.error("[signaling] ws error", e);
   }, [setWsStatus]);
 
-  // ---- disconnect ----
+  // ── disconnect ──────────────────────────────────────────────────────────
   const disconnect = useCallback(() => {
     wsRef.current?.close();
     wsRef.current = null;
     setWsStatus("disconnected");
   }, [setWsStatus]);
 
-  // ---- outbound signaling helpers ----
+  // ── outbound helpers ────────────────────────────────────────────────────
+  const sendAddContact = useCallback(
+    (contactId: string) => send({ type: "add_contact", contact_id: contactId }),
+    [send]
+  );
+
+  const sendRemoveContact = useCallback(
+    (contactId: string) => send({ type: "remove_contact", contact_id: contactId }),
+    [send]
+  );
+
+  const sendGetHistory = useCallback(
+    (withUserId: string, before?: number) =>
+      send({ type: "get_history", with_user_id: withUserId, before, limit: 50 }),
+    [send]
+  );
+
   const sendCallOffer = useCallback(
     (to: string, sdp: string) => send({ type: "call_offer", to, sdp }),
     [send]
@@ -183,19 +230,8 @@ export function useSignaling(callbacks: SignalingCallbacks) {
   );
 
   const sendIceCandidate = useCallback(
-    (
-      to: string,
-      candidate: string,
-      sdpMid: string | null,
-      sdpMLineIndex: number | null
-    ) =>
-      send({
-        type: "ice_candidate",
-        to,
-        candidate,
-        sdp_mid: sdpMid,
-        sdp_m_line_index: sdpMLineIndex,
-      }),
+    (to: string, candidate: string, sdpMid: string | null, sdpMLineIndex: number | null) =>
+      send({ type: "ice_candidate", to, candidate, sdp_mid: sdpMid, sdp_m_line_index: sdpMLineIndex }),
     [send]
   );
 
@@ -209,6 +245,9 @@ export function useSignaling(callbacks: SignalingCallbacks) {
     connect,
     disconnect,
     send,
+    sendAddContact,
+    sendRemoveContact,
+    sendGetHistory,
     sendCallOffer,
     sendCallAnswer,
     sendCallReject,

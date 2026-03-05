@@ -7,14 +7,21 @@ interface Props {
   onBack: () => void;
   onCall: (contactId: string) => void;
   onSendMessage: (to: string, text: string, msgId: string) => void;
+  onLoadHistory: (withUserId: string) => void;
 }
 
-export function ChatPanel({ contactId, onBack, onCall, onSendMessage }: Props) {
+export function ChatPanel({ contactId, onBack, onCall, onSendMessage, onLoadHistory }: Props) {
   const { contacts, messages, userId, addMessage } = useAppStore();
   const contact = contacts.find((c) => c.id === contactId);
   const thread = messages[contactId] ?? [];
   const [draft, setDraft] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Load history from server when the chat opens
+  useEffect(() => {
+    onLoadHistory(contactId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contactId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });

@@ -23,6 +23,7 @@ export default function App() {
     setIncomingCall,
     resetCall,
     setActiveChat,
+    removeContact,
   } = useAppStore();
 
   const {
@@ -35,21 +36,16 @@ export default function App() {
     hangUp,
   } = useWebRTC();
 
-  // Push-to-talk (only active in Tauri)
   usePushToTalk(setMicEnabled);
 
-  // Keep latest refs to avoid stale closures
   const startCallRef = useRef(startCall);
   const handleOfferRef = useRef(handleOffer);
   startCallRef.current = startCall;
   handleOfferRef.current = handleOffer;
 
-  // ---- Signaling callbacks ----
   const signalingCallbacks = {
     onIncomingCall: useCallback((from: string, fromName: string, sdp: string) => {
-      // Only accept a new incoming call when we're idle
-      const state = useAppStore.getState();
-      if (state.callState !== "idle") return;
+      if (useAppStore.getState().callState !== "idle") return;
       useAppStore.getState().setIncomingCall({ from, fromName, sdp });
       useAppStore.getState().setCallState("ringing");
     }, []),
@@ -83,23 +79,26 @@ export default function App() {
     connect,
     disconnect,
     send,
+    sendAddContact,
+    sendRemoveContact,
+    sendGetHistory,
     sendCallReject,
     sendHangUp,
     sendChatMessage,
   } = useSignaling(signalingCallbacks);
 
-  // Keep send ref stable for WebRTC callbacks
   const sendRef = useRef(send);
   sendRef.current = send;
 
-  // Connect to signaling server once identity is set
+  // Connect once identity is set
   useEffect(() => {
     if (!userId) return;
     connect();
     return () => { disconnect(); };
-  }, [userId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
-  // ---- Call handlers ----
+  // ── Call handlers ──────────────────────────────────────────────────────
   const handleStartCall = useCallback(async (contactId: string) => {
     setCallState("calling");
     setCallPeerId(contactId);
@@ -134,30 +133,24 @@ export default function App() {
     setMicEnabled(!next);
   }, [isMuted, setMuted, setMicEnabled]);
 
-  const handleSendChatMessage = useCallback((to: string, text: string, msgId: string) => {
-    sendChatMessage(to, text, msgId);
-  }, [sendChatMessage]);
+  const handleRemoveContact = useCallback((id: string) => {
+    sendRemoveContact(id);
+    removeContact(id);
+  }, [sendRemoveContact, removeContact]);
 
-  // ---- Routing ----
-  // First-run: no identity
-  if (!userId) {
-    return <IdentitySetup />;
-  }
+  // ── Render ─────────────────────────────────────────────────────────────
+  if (!userId) return <IdentitySetup />;
 
-  // Active call (calling, in call)
   if (callState === "calling" || callState === "in_call") {
     return (
-      <>
-        <CallScreen
-          remoteStreams={remoteStreams}
-          onHangUp={handleHangUp}
-          onToggleMute={handleToggleMute}
-        />
-      </>
+      <CallScreen
+        remoteStreams={remoteStreams}
+        onHangUp={handleHangUp}
+        onToggleMute={handleToggleMute}
+      />
     );
   }
 
-  // Chat panel
   if (activeChat) {
     return (
       <>
@@ -165,7 +158,8 @@ export default function App() {
           contactId={activeChat}
           onBack={() => setActiveChat(null)}
           onCall={handleStartCall}
-          onSendMessage={handleSendChatMessage}
+          onSendMessage={(to, text, msgId) => sendChatMessage(to, text, msgId)}
+          onLoadHistory={(id) => sendGetHistory(id)}
         />
         {callState === "ringing" && (
           <IncomingCallOverlay onAccept={handleAcceptCall} onReject={handleRejectCall} />
@@ -174,13 +168,14 @@ export default function App() {
     );
   }
 
-  // Contacts list (main screen)
   return (
     <>
       <ContactList
         userId={userId}
         onStartChat={setActiveChat}
         onStartCall={handleStartCall}
+        onAddContact={sendAddContact}
+        onRemoveContact={handleRemoveContact}
       />
       {callState === "ringing" && (
         <IncomingCallOverlay onAccept={handleAcceptCall} onReject={handleRejectCall} />
