@@ -181,7 +181,13 @@ export function useSignaling(callbacks: SignalingCallbacks) {
       }
     };
 
-    ws.onclose = () => setWsStatus("disconnected");
+    ws.onclose = () => {
+      setWsStatus("disconnected");
+      // We have no presence feed while disconnected — mark everyone offline
+      // so the UI never shows a stale "Online" badge.
+      const s = useAppStore.getState();
+      s.setContacts(s.contacts.map((c) => ({ ...c, online: false })));
+    };
     ws.onerror = (e) => console.error("[signaling] ws error", e);
   }, [setWsStatus]);
 

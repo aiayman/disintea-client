@@ -102,8 +102,21 @@ export default function App() {
   const handleStartCall = useCallback(async (contactId: string) => {
     setCallState("calling");
     setCallPeerId(contactId);
-    await startCallRef.current(contactId, sendRef.current);
-  }, [setCallState, setCallPeerId]);
+    try {
+      await startCallRef.current(contactId, sendRef.current);
+    } catch (err) {
+      console.error("[call] startCall failed", err);
+      // Most likely cause: microphone permission denied.
+      // Reset call state so the user isn't stuck on the CallScreen.
+      hangUp();
+      resetCall();
+      alert(
+        err instanceof DOMException && err.name === "NotAllowedError"
+          ? "Microphone access was denied. Please allow microphone access in your system settings and try again."
+          : `Could not start call: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  }, [setCallState, setCallPeerId, hangUp, resetCall]);
 
   const handleAcceptCall = useCallback(async () => {
     const ic = useAppStore.getState().incomingCall;
@@ -111,8 +124,19 @@ export default function App() {
     setCallState("in_call");
     setCallPeerId(ic.from);
     setIncomingCall(null);
-    await handleOfferRef.current(ic.sdp, ic.from, sendRef.current);
-  }, [setCallState, setCallPeerId, setIncomingCall]);
+    try {
+      await handleOfferRef.current(ic.sdp, ic.from, sendRef.current);
+    } catch (err) {
+      console.error("[call] handleOffer failed", err);
+      hangUp();
+      resetCall();
+      alert(
+        err instanceof DOMException && err.name === "NotAllowedError"
+          ? "Microphone access was denied. Please allow microphone access in your system settings and try again."
+          : `Could not accept call: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  }, [setCallState, setCallPeerId, setIncomingCall, hangUp, resetCall]);
 
   const handleRejectCall = useCallback(() => {
     const ic = useAppStore.getState().incomingCall;
