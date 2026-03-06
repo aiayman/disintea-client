@@ -43,11 +43,13 @@ export async function savePttKeys(keys: string[]): Promise<void> {
 export function usePushToTalk(
   setMicEnabled: (enabled: boolean) => void,
 ) {
-  const { pttKeys, setPttKeys, setPttActive, isMuted } = useAppStore();
+  const { pttKeys, setPttKeys, setPttActive, isMuted, micMode } = useAppStore();
   const isMutedRef = useRef(isMuted);
+  const micModeRef = useRef(micMode);
 
-  // Keep ref in sync so the shortcut handler always sees current mute state
+  // Keep refs in sync so shortcut handlers always see current values
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
+  useEffect(() => { micModeRef.current = micMode; }, [micMode]);
 
   /** Re-register all PTT shortcuts (Tauri only) */
   const registerShortcuts = useCallback(async (keys: string[]) => {
@@ -56,6 +58,9 @@ export function usePushToTalk(
     const { register, unregisterAll } = await import("@tauri-apps/plugin-global-shortcut");
     type ShortcutEvent = { state: "Pressed" | "Released" };
     await unregisterAll();
+
+    // In always_on mode PTT shortcuts do nothing — mic is always live
+    if (micModeRef.current === "always_on") return;
 
     for (const key of keys) {
       try {
@@ -90,6 +95,11 @@ export function usePushToTalk(
       }
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-apply shortcut registration whenever the mic mode changes
+  useEffect(() => {
+    void registerShortcuts(pttKeys);
+  }, [micMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Add a new PTT key */
   const addKey = useCallback(async (key: string) => {

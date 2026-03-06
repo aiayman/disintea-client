@@ -32,6 +32,7 @@ export interface IncomingCall {
 
 export type CallState = "idle" | "calling" | "ringing" | "in_call";
 export type WsStatus = "disconnected" | "connecting" | "connected";
+export type MicMode = "always_on" | "push_to_talk";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Full store shape
@@ -84,11 +85,13 @@ export interface AppStore {
   isScreenSharing: boolean;
   pttKeys: string[];
   audioDeviceId: string;
+  micMode: MicMode;
   setMuted: (v: boolean) => void;
   setPttActive: (v: boolean) => void;
   setScreenSharing: (v: boolean) => void;
   setPttKeys: (keys: string[]) => void;
   setAudioDeviceId: (id: string) => void;
+  setMicMode: (mode: MicMode) => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -174,11 +177,13 @@ export const useAppStore = create<AppStore>()(
       isScreenSharing: false,
       pttKeys: [],
       audioDeviceId: "",
+      micMode: "always_on",
       setMuted: (isMuted) => set({ isMuted }),
       setPttActive: (isPttActive) => set({ isPttActive }),
       setScreenSharing: (isScreenSharing) => set({ isScreenSharing }),
       setPttKeys: (pttKeys) => set({ pttKeys }),
       setAudioDeviceId: (audioDeviceId) => set({ audioDeviceId }),
+      setMicMode: (micMode) => set({ micMode }),
     }),
     {
       name: "disintea-app",
@@ -190,6 +195,7 @@ export const useAppStore = create<AppStore>()(
         pttKeys: s.pttKeys,
         audioDeviceId: s.audioDeviceId,
         serverUrl: s.serverUrl,
+        micMode: s.micMode,
       }),
     }
   )

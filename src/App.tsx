@@ -4,6 +4,7 @@ import { useAppStore } from "./store/appStore";
 import { useWebRTC } from "./hooks/useWebRTC";
 import { useSignaling } from "./hooks/useSignaling";
 import { usePushToTalk } from "./hooks/usePushToTalk";
+import { useRingtone } from "./hooks/useRingtone";
 import { IdentitySetup } from "./components/IdentitySetup";
 import { ContactList } from "./components/ContactList";
 import { ChatPanel } from "./components/ChatPanel";
@@ -41,6 +42,13 @@ export default function App() {
   } = useWebRTC();
 
   usePushToTalk(setMicEnabled);
+
+  // Play calm ringtones during outgoing/incoming call states
+  const ringType =
+    callState === "calling" ? "outgoing"
+    : callState === "ringing" ? "incoming"
+    : null;
+  useRingtone(ringType);
 
   const startCallRef = useRef(startCall);
   const handleOfferRef = useRef(handleOffer);
@@ -113,6 +121,8 @@ export default function App() {
     setCallPeerId(contactId);
     try {
       await startCallRef.current(contactId, sendRef.current);
+      // In PTT mode the mic starts disabled; user must hold the PTT button to transmit
+      if (useAppStore.getState().micMode === "push_to_talk") setMicEnabled(false);
     } catch (err) {
       console.error("[call] startCall failed", err);
       // Most likely cause: microphone permission denied.
@@ -135,6 +145,8 @@ export default function App() {
     setIncomingCall(null);
     try {
       await handleOfferRef.current(ic.sdp, ic.from, sendRef.current);
+      // In PTT mode the mic starts disabled; user must hold the PTT button to transmit
+      if (useAppStore.getState().micMode === "push_to_talk") setMicEnabled(false);
     } catch (err) {
       console.error("[call] handleOffer failed", err);
       hangUp();
@@ -166,6 +178,14 @@ export default function App() {
     setMicEnabled(!next);
   }, [isMuted, setMuted, setMicEnabled]);
 
+  const handleToggleMode = useCallback(() => {
+    const { micMode, setMicMode, isMuted: muted } = useAppStore.getState();
+    const newMode = micMode === "always_on" ? "push_to_talk" : "always_on";
+    setMicMode(newMode);
+    // Immediately apply mic state: always_on → enable; push_to_talk → disable
+    if (!muted) setMicEnabled(newMode === "always_on");
+  }, [setMicEnabled]);
+
   const handleRemoveContact = useCallback((id: string) => {
     sendRemoveContact(id);
     removeContact(id);
@@ -180,6 +200,8 @@ export default function App() {
         remoteStreams={remoteStreams}
         onHangUp={handleHangUp}
         onToggleMute={handleToggleMute}
+        onToggleMode={handleToggleMode}
+        setMicEnabled={setMicEnabled}
       />
     );
   }

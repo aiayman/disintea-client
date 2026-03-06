@@ -8,11 +8,18 @@ interface Props {
 
 export function PeerVideo({ stream, peerId, label }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
     if (videoRef.current) {
       videoRef.current.srcObject = stream;
     }
+  }, [stream]);
+
+  useEffect(() => {
+    if (!audioRef.current) return;
+    audioRef.current.srcObject = stream;
+    audioRef.current.play().catch(() => { /* browser autoplay policy */ });
   }, [stream]);
 
   const hasVideo = stream.getVideoTracks().length > 0;
@@ -46,7 +53,7 @@ export function PeerVideo({ stream, peerId, label }: Props) {
       {/* Hidden audio element for audio-only streams */}
       {!hasVideo && (
         <audio
-          ref={(el) => { if (el) el.srcObject = stream; }}
+          ref={audioRef}
           autoPlay
         />
       )}
