@@ -14,6 +14,8 @@ export function useWebRTC() {
   const screenStreamRef = useRef<MediaStream | null>(null);
   // Peer connections: peerId → RTCPeerConnection
   const pcsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  // ICE candidates queued because PC didn't exist or remote desc wasn't set yet
+  const iceCandidateQueueRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
 
   const [remoteStreams, setRemoteStreams] = useState<RemoteStreams>(new Map());
 
@@ -95,6 +97,16 @@ export function useWebRTC() {
     return pc;
   }, [buildConfig, getLocalStream]);
 
+  /** Drain any ICE candidates queued for `peerId` into `pc`. */
+  const flushCandidateQueue = useCallback(async (peerId: string, pc: RTCPeerConnection) => {
+    const queue = iceCandidateQueueRef.current.get(peerId) ?? [];
+    iceCandidateQueueRef.current.delete(peerId);
+    for (const init of queue) {
+      try { await pc.addIceCandidate(init); }
+      catch (e) { console.warn("[ice] queued addIceCandidate failed:", e); }
+    }
+  }, []);
+
   /** Called when a new peer joins — we are the offerer */
   const startCall = useCallback(async (peerId: string, sendSignal: (msg: object) => void) => {
     const pc = await getOrCreatePc(peerId, sendSignal);
@@ -107,28 +119,44 @@ export function useWebRTC() {
   const handleOffer = useCallback(async (sdp: string, from: string, sendSignal: (msg: object) => void) => {
     const pc = await getOrCreatePc(from, sendSignal);
     await pc.setRemoteDescription({ type: "offer", sdp });
+    // Flush any ICE candidates that arrived before remote desc was set
+    await flushCandidateQueue(from, pc);
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
     sendSignal({ type: "call_answer", sdp: answer.sdp, to: from });
-  }, [getOrCreatePc]);
+  }, [getOrCreatePc, flushCandidateQueue]);
 
   /** Handle an incoming answer */
   const handleAnswer = useCallback(async (sdp: string, from: string) => {
     const pc = pcsRef.current.get(from);
-    if (pc) await pc.setRemoteDescription({ type: "answer", sdp });
-  }, []);
+    if (!pc) return;
+    await pc.setRemoteDescription({ type: "answer", sdp });
+    // Flush any ICE candidates that arrived before remote desc was set
+    await flushCandidateQueue(from, pc);
+  }, [flushCandidateQueue]);
 
-  /** Handle an incoming ICE candidate */
+  /** Handle an incoming ICE candidate — queue it if PC isn't ready yet */
   const handleIceCandidate = useCallback(async (
     candidate: string,
     sdpMid: string | null,
     sdpMLineIndex: number | null,
     from: string,
   ) => {
+    const init: RTCIceCandidateInit = {
+      candidate,
+      sdpMid: sdpMid ?? undefined,
+      sdpMLineIndex: sdpMLineIndex ?? undefined,
+    };
     const pc = pcsRef.current.get(from);
-    if (pc) {
-      await pc.addIceCandidate({ candidate, sdpMid: sdpMid ?? undefined, sdpMLineIndex: sdpMLineIndex ?? undefined });
+    if (!pc || !pc.remoteDescription) {
+      // PC not created yet (or remote desc not set) — queue for later
+      const q = iceCandidateQueueRef.current.get(from) ?? [];
+      q.push(init);
+      iceCandidateQueueRef.current.set(from, q);
+      return;
     }
+    try { await pc.addIceCandidate(init); }
+    catch (e) { console.warn("[ice] addIceCandidate failed:", e); }
   }, []);
 
   /** Remove a peer connection when a peer leaves */
@@ -136,6 +164,7 @@ export function useWebRTC() {
     const pc = pcsRef.current.get(peerId);
     pc?.close();
     pcsRef.current.delete(peerId);
+    iceCandidateQueueRef.current.delete(peerId);
     setRemoteStreams((prev) => {
       const next = new Map(prev);
       next.delete(peerId);
@@ -191,6 +220,7 @@ export function useWebRTC() {
   const hangUp = useCallback(() => {
     for (const pc of pcsRef.current.values()) pc.close();
     pcsRef.current.clear();
+    iceCandidateQueueRef.current.clear();
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
     localStreamRef.current = null;
     screenStreamRef.current?.getTracks().forEach((t) => t.stop());

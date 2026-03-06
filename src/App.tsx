@@ -121,8 +121,8 @@ export default function App() {
     setCallPeerId(contactId);
     try {
       await startCallRef.current(contactId, sendRef.current);
-      // In PTT mode the mic starts disabled; user must hold the PTT button to transmit
-      if (useAppStore.getState().micMode === "push_to_talk") setMicEnabled(false);
+      // Set mic state immediately: always-on → enabled, PTT → start muted
+      setMicEnabled(useAppStore.getState().micMode === "always_on" && !useAppStore.getState().isMuted);
     } catch (err) {
       console.error("[call] startCall failed", err);
       // Most likely cause: microphone permission denied.
@@ -145,8 +145,8 @@ export default function App() {
     setIncomingCall(null);
     try {
       await handleOfferRef.current(ic.sdp, ic.from, sendRef.current);
-      // In PTT mode the mic starts disabled; user must hold the PTT button to transmit
-      if (useAppStore.getState().micMode === "push_to_talk") setMicEnabled(false);
+      // Set mic state immediately: always-on → enabled, PTT → start muted
+      setMicEnabled(useAppStore.getState().micMode === "always_on" && !useAppStore.getState().isMuted);
     } catch (err) {
       console.error("[call] handleOffer failed", err);
       hangUp();

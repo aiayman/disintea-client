@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAppStore } from "../store/appStore";
 import type { RemoteStreams } from "../hooks/useWebRTC";
 
@@ -27,6 +27,21 @@ export function CallScreen({ remoteStreams, onHangUp, onToggleMute, onToggleMode
   const contact = contacts.find((c) => c.id === callPeerId);
   const displayName = contact?.name ?? callPeerId ?? "Unknown";
   const inCall = callState === "in_call";
+
+  // ── Call duration timer ──────────────────────────────────────────────
+  const [elapsed, setElapsed] = useState(0);
+  const startRef = useRef<number>(0);
+  useEffect(() => {
+    if (callState !== "in_call") { setElapsed(0); return; }
+    startRef.current = Date.now();
+    const id = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startRef.current) / 1000));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [callState]);
+  const fmt = (s: number) =>
+    `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+  // ────────────────────────────────────────────────────────────────────
 
   const statusLabel =
     callState === "calling"
@@ -64,6 +79,9 @@ export function CallScreen({ remoteStreams, onHangUp, onToggleMute, onToggleMode
         </div>
         <p className="text-2xl font-semibold">{displayName}</p>
         <p className="text-sm text-gray-400">{statusLabel}</p>
+        {inCall && (
+          <p className="font-mono text-lg text-indigo-300">{fmt(elapsed)}</p>
+        )}
       </div>
 
       {/* PTT hold button — only visible in push_to_talk mode while in the call */}

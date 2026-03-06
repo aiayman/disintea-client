@@ -141,7 +141,16 @@ export const useAppStore = create<AppStore>()(
           return { messages: { ...s.messages, [contactId]: [...existing, msg] } };
         }),
       setHistory: (contactId, msgs) =>
-        set((s) => ({ messages: { ...s.messages, [contactId]: msgs } })),
+        set((s) => {
+          // Merge server history with any locally-cached messages (avoids wiping
+          // messages received in-flight that the server already has but arrived
+          // before the history response did).
+          const existing = s.messages[contactId] ?? [];
+          const serverIds = new Set(msgs.map((m) => m.id));
+          const localOnly = existing.filter((m) => !serverIds.has(m.id));
+          const merged = [...localOnly, ...msgs].sort((a, b) => a.timestamp - b.timestamp);
+          return { messages: { ...s.messages, [contactId]: merged } };
+        }),
 
       // Call
       callState: "idle",
@@ -196,6 +205,10 @@ export const useAppStore = create<AppStore>()(
         audioDeviceId: s.audioDeviceId,
         serverUrl: s.serverUrl,
         micMode: s.micMode,
+        // Persist message threads (last 200 per thread) so history loads instantly
+        messages: Object.fromEntries(
+          Object.entries(s.messages).map(([k, v]) => [k, v.slice(-200)])
+        ),
       }),
     }
   )

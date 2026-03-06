@@ -23,21 +23,18 @@ export interface TurnCredentials {
 }
 
 /** Returns the signaling WebSocket URL.
- *  Priority: 1) user-saved override in store  2) compiled-in URL (Tauri)  3) same-origin WS
+ *  Priority: 1) user-saved override in store  2) production server default
+ *  The Tauri compiled-in URL (SIGNALING_URL env var) is no longer needed for
+ *  normal deployments — the default below is used for all new installs.
  */
+const DEFAULT_SERVER_URL = "ws://161.97.187.145:8080/ws";
+
 export async function getServerConfig(): Promise<ServerConfig> {
-  // Runtime override: user can paste their server URL in Settings and it is
-  // immediately effective without a recompile or reinstall.
+  // Runtime override: user can paste their server URL in Settings
   const saved = useAppStore.getState().serverUrl.trim();
   if (saved) return { ws_url: saved };
-
-  if (isTauri()) {
-    const { invoke } = await import("@tauri-apps/api/core");
-    return invoke<ServerConfig>("get_server_config");
-  }
-  // In browser: connect back to the same host over WSS (or WS in dev).
-  const proto = location.protocol === "https:" ? "wss" : "ws";
-  return { ws_url: `${proto}://${location.host}/ws` };
+  // Fall back to the known production server
+  return { ws_url: DEFAULT_SERVER_URL };
 }
 
 /** Returns TURN credentials for WebRTC. */
