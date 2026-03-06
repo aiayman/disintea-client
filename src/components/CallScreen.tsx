@@ -13,16 +13,37 @@ function RemoteAudio({ stream }: { stream: MediaStream }) {
   return <audio ref={ref} autoPlay style={{ position: "absolute", width: 0, height: 0 }} />;
 }
 
+/** Renders a remote video stream (e.g. screen share). */
+function RemoteVideo({ stream, label }: { stream: MediaStream; label?: string }) {
+  const ref = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    if (!ref.current) return;
+    ref.current.srcObject = stream;
+    ref.current.play().catch(() => {});
+  }, [stream]);
+  const hasVideo = stream.getVideoTracks().some((t) => t.readyState === "live");
+  if (!hasVideo) return null;
+  return (
+    <div className="relative rounded-xl overflow-hidden bg-black shadow-lg w-full" style={{ maxHeight: "55vh" }}>
+      <video ref={ref} autoPlay playsInline className="w-full h-full object-contain" />
+      {label && (
+        <span className="absolute bottom-2 left-3 text-xs text-white bg-black/50 rounded px-1.5 py-0.5">{label}</span>
+      )}
+    </div>
+  );
+}
+
 interface Props {
   remoteStreams: RemoteStreams;
   onHangUp: () => void;
   onToggleMute: () => void;
   onToggleMode: () => void;
+  onToggleScreenShare: () => void;
   setMicEnabled: (enabled: boolean) => void;
 }
 
-export function CallScreen({ remoteStreams, onHangUp, onToggleMute, onToggleMode, setMicEnabled }: Props) {
-  const { callState, callPeerId, contacts, isMuted, micMode, isPttActive, setPttActive } = useAppStore();
+export function CallScreen({ remoteStreams, onHangUp, onToggleMute, onToggleMode, onToggleScreenShare, setMicEnabled }: Props) {
+  const { callState, callPeerId, contacts, isMuted, micMode, isPttActive, setPttActive, isScreenSharing } = useAppStore();
 
   const contact = contacts.find((c) => c.id === callPeerId);
   const displayName = contact?.name ?? callPeerId ?? "Unknown";
@@ -66,23 +87,35 @@ export function CallScreen({ remoteStreams, onHangUp, onToggleMute, onToggleMode
   };
 
   return (
-    <div className="flex h-screen flex-col items-center justify-between bg-gray-900 py-12 text-white">
-      {/* Audio elements — rendered outside any display:none container */}
+    <div className="flex h-screen flex-col items-center justify-between bg-gray-900 py-8 text-white overflow-hidden">
+      {/* Hidden audio for all peers */}
       {[...remoteStreams.entries()].map(([peerId, stream]) => (
         <RemoteAudio key={peerId} stream={stream} />
       ))}
 
       {/* Contact info */}
-      <div className="flex flex-col items-center gap-4">
-        <div className="flex h-24 w-24 items-center justify-center rounded-full bg-indigo-700 text-5xl font-bold">
-          {displayName[0]?.toUpperCase()}
-        </div>
+      <div className="flex flex-col items-center gap-3">
+        {!isScreenSharing && (
+          <div className="flex h-24 w-24 items-center justify-center rounded-full bg-indigo-700 text-5xl font-bold">
+            {displayName[0]?.toUpperCase()}
+          </div>
+        )}
         <p className="text-2xl font-semibold">{displayName}</p>
         <p className="text-sm text-gray-400">{statusLabel}</p>
         {inCall && (
           <p className="font-mono text-lg text-indigo-300">{fmt(elapsed)}</p>
         )}
       </div>
+
+      {/* Remote video tiles (screen share) */}
+      {inCall && [...remoteStreams.entries()].some(([, s]) => s.getVideoTracks().some(t => t.readyState === "live")) && (
+        <div className="w-full flex-1 flex flex-col gap-2 px-4 overflow-y-auto">
+          {[...remoteStreams.entries()].map(([peerId, stream]) => {
+            const c = contacts.find((ct) => ct.id === peerId);
+            return <RemoteVideo key={peerId} stream={stream} label={c?.name ?? peerId.slice(0, 8)} />;
+          })}
+        </div>
+      )}
 
       {/* PTT hold button — only visible in push_to_talk mode while in the call */}
       {inCall && micMode === "push_to_talk" ? (
@@ -104,12 +137,12 @@ export function CallScreen({ remoteStreams, onHangUp, onToggleMute, onToggleMode
       )}
 
       {/* Bottom controls */}
-      <div className="flex flex-col items-center gap-3">
-        <div className="flex gap-6">
+      <div className="flex flex-col items-center gap-3 mt-4">
+        <div className="flex gap-4">
           {/* Complete mute / unmute */}
           <button
             onClick={onToggleMute}
-            className={`flex h-16 w-16 items-center justify-center rounded-full text-2xl shadow-lg transition active:scale-95 ${
+            className={`flex h-14 w-14 items-center justify-center rounded-full text-2xl shadow-lg transition active:scale-95 ${
               isMuted
                 ? "bg-red-700 hover:bg-red-600"
                 : "bg-gray-700 hover:bg-gray-600"
@@ -122,7 +155,7 @@ export function CallScreen({ remoteStreams, onHangUp, onToggleMute, onToggleMode
           {/* Mic mode toggle: AON = Always On, PTT = Push to Talk */}
           <button
             onClick={onToggleMode}
-            className={`flex h-16 w-16 items-center justify-center rounded-full text-sm font-bold shadow-lg transition active:scale-95 ${
+            className={`flex h-14 w-14 items-center justify-center rounded-full text-sm font-bold shadow-lg transition active:scale-95 ${
               micMode === "push_to_talk"
                 ? "bg-indigo-600 hover:bg-indigo-500 text-white"
                 : "bg-gray-700 hover:bg-gray-600 text-gray-300"
@@ -132,10 +165,23 @@ export function CallScreen({ remoteStreams, onHangUp, onToggleMute, onToggleMode
             {micMode === "always_on" ? "PTT" : "AON"}
           </button>
 
+          {/* Screen share */}
+          <button
+            onClick={onToggleScreenShare}
+            className={`flex h-14 w-14 items-center justify-center rounded-full text-xl shadow-lg transition active:scale-95 ${
+              isScreenSharing
+                ? "bg-green-600 hover:bg-green-500 text-white"
+                : "bg-gray-700 hover:bg-gray-600 text-gray-300"
+            }`}
+            title={isScreenSharing ? "Stop Screen Share" : "Share Screen"}
+          >
+            🖥
+          </button>
+
           {/* Hang up */}
           <button
             onClick={onHangUp}
-            className="flex h-16 w-16 items-center justify-center rounded-full bg-red-600 text-2xl shadow-lg transition hover:bg-red-500 active:scale-95"
+            className="flex h-14 w-14 items-center justify-center rounded-full bg-red-600 text-2xl shadow-lg transition hover:bg-red-500 active:scale-95"
             title="Hang up"
           >
             📵

@@ -16,6 +16,8 @@ export function useWebRTC() {
   const pcsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   // ICE candidates queued because PC didn't exist or remote desc wasn't set yet
   const iceCandidateQueueRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
+  // Per-peer composite streams (accumulate audio + video tracks from remote)
+  const remoteCompositeRef = useRef<Map<string, MediaStream>>(new Map());
 
   const [remoteStreams, setRemoteStreams] = useState<RemoteStreams>(new Map());
 
@@ -61,13 +63,43 @@ export function useWebRTC() {
     const stream = await getLocalStream();
     stream.getTracks().forEach((t) => pc.addTrack(t, stream));
 
-    // Handle incoming remote tracks
+    // Handle incoming remote tracks — accumulate into a composite stream
+    // so adding a video track mid-call doesn't wipe the existing audio track.
     pc.ontrack = (evt) => {
+      let composite = remoteCompositeRef.current.get(peerId);
+      if (!composite) {
+        composite = new MediaStream();
+        remoteCompositeRef.current.set(peerId, composite);
+      }
+      if (!composite.getTrackById(evt.track.id)) {
+        composite.addTrack(evt.track);
+      }
+      const cs = composite;
+      evt.track.onended = () => {
+        cs.removeTrack(evt.track);
+        setRemoteStreams((prev) => new Map(prev).set(peerId, cs));
+      };
       setRemoteStreams((prev) => {
         const next = new Map(prev);
-        next.set(peerId, evt.streams[0]);
+        next.set(peerId, cs);
         return next;
       });
+    };
+
+    // Mid-call renegotiation (e.g. adding screen-share video/audio track).
+    // Skip the very first onnegotiationneeded — the initial offer is sent
+    // explicitly by startCall(); subsequent triggers fire when new tracks
+    // are added and an established SDP already exists.
+    pc.onnegotiationneeded = async () => {
+      if (!pc.currentLocalDescription) return; // still in initial setup
+      if (pc.signalingState !== "stable") return; // already negotiating
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        sendSignal({ type: "call_offer", sdp: offer.sdp, to: peerId });
+      } catch (e) {
+        console.warn("[renego] onnegotiationneeded failed:", e);
+      }
     };
 
     // Relay ICE candidates
@@ -165,6 +197,7 @@ export function useWebRTC() {
     pc?.close();
     pcsRef.current.delete(peerId);
     iceCandidateQueueRef.current.delete(peerId);
+    remoteCompositeRef.current.delete(peerId);
     setRemoteStreams((prev) => {
       const next = new Map(prev);
       next.delete(peerId);
@@ -177,40 +210,56 @@ export function useWebRTC() {
     localStreamRef.current?.getAudioTracks().forEach((t) => { t.enabled = enabled; });
   }, []);
 
-  /** Start screen sharing — replaces video track in all peer connections */
+  /** Start screen sharing — sends video (and system audio if captured) to all peers */
   const startScreenShare = useCallback(async () => {
     const stream = await navigator.mediaDevices.getDisplayMedia({
-      video: { displaySurface: "window" } as MediaTrackConstraints,
-      audio: false,
+      video: true,
+      audio: true, // capture tab / system audio where browser supports it
     });
     screenStreamRef.current = stream;
-    const [screenTrack] = stream.getVideoTracks();
+    const [videoTrack] = stream.getVideoTracks();
+    const localMicStream = localStreamRef.current;
 
-    // Add/replace track in all PCs
     for (const pc of pcsRef.current.values()) {
-      const sender = pc.getSenders().find((s) => s.track?.kind === "video");
-      if (sender) {
-        await sender.replaceTrack(screenTrack);
+      // Video: replace existing video sender or add a new one
+      const videoSender = pc.getSenders().find((s) => s.track?.kind === "video");
+      if (videoSender) {
+        await videoSender.replaceTrack(videoTrack);
       } else {
-        pc.addTrack(screenTrack, stream);
+        // Attach to the mic stream so the receiver sees a single unified stream
+        pc.addTrack(videoTrack, localMicStream ?? stream);
+      }
+      // System audio from screen capture
+      const [audioTrack] = stream.getAudioTracks();
+      if (audioTrack) {
+        pc.addTrack(audioTrack, localMicStream ?? stream);
       }
     }
 
     setScreenSharing(true);
-
-    // Auto-stop when user ends via browser UI
-    screenTrack.onended = () => stopScreenShare();
+    // Auto-stop when user dismisses via browser UI
+    videoTrack.onended = () => { void stopScreenShare(); };
   }, [setScreenSharing]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Stop screen sharing */
   const stopScreenShare = useCallback(async () => {
-    screenStreamRef.current?.getTracks().forEach((t) => t.stop());
+    const screenStream = screenStreamRef.current;
+    if (!screenStream) return;
+
+    const screenTrackIds = new Set(screenStream.getTracks().map((t) => t.id));
+    screenStream.getTracks().forEach((t) => t.stop());
     screenStreamRef.current = null;
 
-    // Remove video track from all PCs
     for (const pc of pcsRef.current.values()) {
-      const sender = pc.getSenders().find((s) => s.track?.kind === "video");
-      if (sender) await sender.replaceTrack(null);
+      for (const sender of pc.getSenders()) {
+        if (sender.track && screenTrackIds.has(sender.track.id)) {
+          if (sender.track.kind === "video") {
+            await sender.replaceTrack(null); // remove video cleanly
+          } else {
+            pc.removeTrack(sender); // remove screen audio sender
+          }
+        }
+      }
     }
 
     setScreenSharing(false);
@@ -221,6 +270,7 @@ export function useWebRTC() {
     for (const pc of pcsRef.current.values()) pc.close();
     pcsRef.current.clear();
     iceCandidateQueueRef.current.clear();
+    remoteCompositeRef.current.clear();
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
     localStreamRef.current = null;
     screenStreamRef.current?.getTracks().forEach((t) => t.stop());

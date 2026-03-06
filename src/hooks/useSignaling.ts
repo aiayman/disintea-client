@@ -169,6 +169,10 @@ export function useSignaling(callbacks: SignalingCallbacks) {
             timestamp: msg.timestamp as number,
             mine: false,
           });
+          // Badge the sender if the chat window isn't currently open with them
+          if (store.activeChat !== contactId) {
+            store.markUnread(contactId);
+          }
           break;
         }
 

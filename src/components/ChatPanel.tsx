@@ -11,14 +11,15 @@ interface Props {
 }
 
 export function ChatPanel({ contactId, onBack, onCall, onSendMessage, onLoadHistory }: Props) {
-  const { contacts, messages, userId, addMessage } = useAppStore();
+  const { contacts, messages, userId, addMessage, markRead } = useAppStore();
   const contact = contacts.find((c) => c.id === contactId);
   const thread = messages[contactId] ?? [];
   const [draft, setDraft] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Load history from server when the chat opens
+  // Clear unread badge and load history when chat opens
   useEffect(() => {
+    markRead(contactId);
     onLoadHistory(contactId);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contactId]);

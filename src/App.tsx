@@ -39,6 +39,8 @@ export default function App() {
     handleIceCandidate,
     setMicEnabled,
     hangUp,
+    startScreenShare,
+    stopScreenShare,
   } = useWebRTC();
 
   usePushToTalk(setMicEnabled);
@@ -202,6 +204,11 @@ export default function App() {
         onToggleMute={handleToggleMute}
         onToggleMode={handleToggleMode}
         setMicEnabled={setMicEnabled}
+        onToggleScreenShare={async () => {
+          const { isScreenSharing } = useAppStore.getState();
+          if (isScreenSharing) { await stopScreenShare(); }
+          else { try { await startScreenShare(); } catch (e) { console.error("[screen]", e); } }
+        }}
       />
     );
   }

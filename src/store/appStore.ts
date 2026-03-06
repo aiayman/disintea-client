@@ -57,6 +57,11 @@ export interface AppStore {
   addMessage: (contactId: string, msg: Message) => void;
   setHistory: (contactId: string, msgs: Message[]) => void;
 
+  // Unread message badges (contact IDs with messages unseen while chat was closed)
+  unreadFrom: string[];
+  markUnread: (contactId: string) => void;
+  markRead: (contactId: string) => void;
+
   // Call
   callState: CallState;
   callPeerId: string | null;
@@ -140,6 +145,15 @@ export const useAppStore = create<AppStore>()(
           if (existing.find((m) => m.id === msg.id)) return s;
           return { messages: { ...s.messages, [contactId]: [...existing, msg] } };
         }),
+
+      // Unread
+      unreadFrom: [],
+      markUnread: (contactId) =>
+        set((s) => ({
+          unreadFrom: s.unreadFrom.includes(contactId) ? s.unreadFrom : [...s.unreadFrom, contactId],
+        })),
+      markRead: (contactId) =>
+        set((s) => ({ unreadFrom: s.unreadFrom.filter((id) => id !== contactId) })),
       setHistory: (contactId, msgs) =>
         set((s) => {
           // Merge server history with any locally-cached messages (avoids wiping
@@ -209,6 +223,7 @@ export const useAppStore = create<AppStore>()(
         messages: Object.fromEntries(
           Object.entries(s.messages).map(([k, v]) => [k, v.slice(-200)])
         ),
+        unreadFrom: s.unreadFrom,
       }),
     }
   )

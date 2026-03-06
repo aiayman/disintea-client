@@ -46,10 +46,51 @@ export function usePushToTalk(
   const { pttKeys, setPttKeys, setPttActive, isMuted, micMode } = useAppStore();
   const isMutedRef = useRef(isMuted);
   const micModeRef = useRef(micMode);
+  const pttKeysRef = useRef(pttKeys);
 
   // Keep refs in sync so shortcut handlers always see current values
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
   useEffect(() => { micModeRef.current = micMode; }, [micMode]);
+  useEffect(() => { pttKeysRef.current = pttKeys; }, [pttKeys]);
+
+  // ── DOM keyboard listeners (primary PTT mechanism when app is focused) ──
+  // Uses the same key normalisation as Settings so stored keys match exactly.
+  useEffect(() => {
+    const normalizeKey = (e: KeyboardEvent): string => {
+      const mods: string[] = [];
+      if (e.ctrlKey) mods.push("Ctrl");
+      if (e.altKey) mods.push("Alt");
+      if (e.shiftKey) mods.push("Shift");
+      const k = e.code === "Space" ? "Space" : e.key.length === 1 ? e.key.toUpperCase() : e.code;
+      return [...mods, k].join("+");
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.repeat) return; // held-key repeat events — ignore
+      if (micModeRef.current !== "push_to_talk") return;
+      if (isMutedRef.current) return;
+      if (pttKeysRef.current.includes(normalizeKey(e))) {
+        e.preventDefault();
+        setMicEnabled(true);
+        setPttActive(true);
+      }
+    };
+
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (micModeRef.current !== "push_to_talk") return;
+      if (pttKeysRef.current.includes(normalizeKey(e))) {
+        setMicEnabled(false);
+        setPttActive(false);
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("keyup", onKeyUp);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("keyup", onKeyUp);
+    };
+  }, [setMicEnabled, setPttActive]);
 
   /** Re-register all PTT shortcuts (Tauri only) */
   const registerShortcuts = useCallback(async (keys: string[]) => {

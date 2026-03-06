@@ -11,7 +11,7 @@ interface Props {
 }
 
 export function ContactList({ onStartChat, onStartCall, onAddContact, onRemoveContact, onOpenSettings, userId }: Props) {
-  const { contacts, wsStatus, username } = useAppStore();
+  const { contacts, wsStatus, username, unreadFrom } = useAppStore();
   const [showAddModal, setShowAddModal] = useState(false);
   const [newId, setNewId] = useState("");
   const [showMyId, setShowMyId] = useState(false);
@@ -101,7 +101,12 @@ export function ContactList({ onStartChat, onStartCall, onAddContact, onRemoveCo
 
                 {/* Name */}
                 <div className="flex-1 min-w-0">
-                  <p className="truncate font-medium">{c.name}</p>
+                  <p className={`truncate ${unreadFrom.includes(c.id) ? "font-bold text-white" : "font-medium text-gray-200"}`}>
+                    {c.name}
+                    {unreadFrom.includes(c.id) && (
+                      <span className="ml-2 inline-block h-2 w-2 rounded-full bg-indigo-400 align-middle" />
+                    )}
+                  </p>
                   <p className="text-xs text-gray-500">{c.online ? "Online" : "Offline"}</p>
                 </div>
 
@@ -117,7 +122,9 @@ export function ContactList({ onStartChat, onStartCall, onAddContact, onRemoveCo
                   <button
                     onClick={() => onStartCall(c.id)}
                     disabled={!c.online}
-                    className="rounded-full p-2 text-gray-400 hover:bg-gray-700 hover:text-white disabled:opacity-30"
+                    className={`rounded-full p-2 transition hover:bg-gray-700 disabled:opacity-30 ${
+                      c.online ? "text-green-500 hover:text-green-400" : "text-gray-400"
+                    }`}
                     title="Call"
                   >
                     📞
