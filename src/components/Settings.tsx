@@ -87,7 +87,8 @@ export function Settings({ onClose, setMicEnabled, onReconnect }: Props) {
           <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">Server</h3>
           <p className="text-xs text-gray-500">
             Paste your server's WebSocket URL. Changing this reconnects immediately.
-            Example: <span className="font-mono text-gray-400">wss://your-server:8443/ws</span>
+            Use plain <span className="font-mono text-gray-400">ws://</span> (not wss://) unless you have a real TLS certificate.
+            Example: <span className="font-mono text-gray-400">ws://161.97.187.145:8080/ws</span>
           </p>
           <input
             className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 font-mono text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
