@@ -6,6 +6,8 @@
  * In a plain browser it's absent, so we fall back to HTTP/WebSocket calls.
  */
 
+import { useAppStore } from "../store/appStore";
+
 export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
@@ -20,8 +22,15 @@ export interface TurnCredentials {
   credential: string;
 }
 
-/** Returns the signaling WebSocket URL. */
+/** Returns the signaling WebSocket URL.
+ *  Priority: 1) user-saved override in store  2) compiled-in URL (Tauri)  3) same-origin WS
+ */
 export async function getServerConfig(): Promise<ServerConfig> {
+  // Runtime override: user can paste their server URL in Settings and it is
+  // immediately effective without a recompile or reinstall.
+  const saved = useAppStore.getState().serverUrl.trim();
+  if (saved) return { ws_url: saved };
+
   if (isTauri()) {
     const { invoke } = await import("@tauri-apps/api/core");
     return invoke<ServerConfig>("get_server_config");

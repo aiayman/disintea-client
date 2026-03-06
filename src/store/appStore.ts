@@ -10,6 +10,12 @@ export interface Contact {
   online: boolean;
 }
 
+export interface LogEntry {
+  ts: number;
+  level: "info" | "warn" | "error";
+  msg: string;
+}
+
 export interface Message {
   id: string;
   from: string;
@@ -62,6 +68,15 @@ export interface AppStore {
   // WS
   wsStatus: WsStatus;
   setWsStatus: (s: WsStatus) => void;
+
+  // Server URL override (persisted; empty = use compiled-in default)
+  serverUrl: string;
+  setServerUrl: (url: string) => void;
+
+  // Diagnostic log — last 300 entries, in-memory only (never persisted)
+  logs: LogEntry[];
+  addLog: (level: "info" | "warn" | "error", msg: string) => void;
+  clearLogs: () => void;
 
   // Audio
   isMuted: boolean;
@@ -139,6 +154,20 @@ export const useAppStore = create<AppStore>()(
       wsStatus: "disconnected",
       setWsStatus: (wsStatus) => set({ wsStatus }),
 
+      // Server URL override
+      serverUrl: "",
+      setServerUrl: (serverUrl) => set({ serverUrl }),
+
+      // Diagnostic log
+      logs: [],
+      addLog: (level, msg) =>
+        set((s) => {
+          const entry: LogEntry = { ts: Date.now(), level, msg };
+          const trimmed = s.logs.length >= 300 ? s.logs.slice(-299) : s.logs;
+          return { logs: [...trimmed, entry] };
+        }),
+      clearLogs: () => set({ logs: [] }),
+
       // Audio
       isMuted: false,
       isPttActive: false,
@@ -160,6 +189,7 @@ export const useAppStore = create<AppStore>()(
         contacts: s.contacts,
         pttKeys: s.pttKeys,
         audioDeviceId: s.audioDeviceId,
+        serverUrl: s.serverUrl,
       }),
     }
   )

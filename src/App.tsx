@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
 import { useAppStore } from "./store/appStore";
 import { useWebRTC } from "./hooks/useWebRTC";
@@ -9,8 +9,12 @@ import { ContactList } from "./components/ContactList";
 import { ChatPanel } from "./components/ChatPanel";
 import { CallScreen } from "./components/CallScreen";
 import { IncomingCallOverlay } from "./components/IncomingCallOverlay";
+import { Settings } from "./components/Settings";
 
 export default function App() {
+  const [
+    showSettings, setShowSettings,
+  ] = useState(false);
   const {
     userId,
     callState,
@@ -86,6 +90,11 @@ export default function App() {
     sendHangUp,
     sendChatMessage,
   } = useSignaling(signalingCallbacks);
+
+  const handleReconnect = useCallback(() => {
+    disconnect();
+    void connect();
+  }, [disconnect, connect]);
 
   const sendRef = useRef(send);
   sendRef.current = send;
@@ -200,9 +209,17 @@ export default function App() {
         onStartCall={handleStartCall}
         onAddContact={sendAddContact}
         onRemoveContact={handleRemoveContact}
+        onOpenSettings={() => setShowSettings(true)}
       />
       {callState === "ringing" && (
         <IncomingCallOverlay onAccept={handleAcceptCall} onReject={handleRejectCall} />
+      )}
+      {showSettings && (
+        <Settings
+          onClose={() => setShowSettings(false)}
+          setMicEnabled={setMicEnabled}
+          onReconnect={handleReconnect}
+        />
       )}
     </>
   );

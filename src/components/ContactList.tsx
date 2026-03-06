@@ -6,10 +6,11 @@ interface Props {
   onStartCall: (contactId: string) => void;
   onAddContact: (contactId: string) => void;
   onRemoveContact: (contactId: string) => void;
+  onOpenSettings: () => void;
   userId: string;
 }
 
-export function ContactList({ onStartChat, onStartCall, onAddContact, onRemoveContact, userId }: Props) {
+export function ContactList({ onStartChat, onStartCall, onAddContact, onRemoveContact, onOpenSettings, userId }: Props) {
   const { contacts, wsStatus, username } = useAppStore();
   const [showAddModal, setShowAddModal] = useState(false);
   const [newId, setNewId] = useState("");
@@ -45,6 +46,13 @@ export function ContactList({ onStartChat, onStartCall, onAddContact, onRemoveCo
             title="Show my ID"
           >
             My ID
+          </button>
+          <button
+            onClick={onOpenSettings}
+            className="rounded-lg px-2 py-1 text-xs text-gray-400 hover:bg-gray-700"
+            title="Settings"
+          >
+            ⚙
           </button>
           <button
             onClick={() => setShowAddModal(true)}

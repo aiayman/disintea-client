@@ -27,12 +27,22 @@ export function useSignaling(callbacks: SignalingCallbacks) {
 
   const { setWsStatus } = useAppStore();
 
+  // ── diagnostics helper ──────────────────────────────────────────────────
+  const log = useCallback((level: "info" | "warn" | "error", msg: string) => {
+    useAppStore.getState().addLog(level, msg);
+    console[level](`[ws] ${msg}`);
+  }, []);
+
   // ── low-level send ──────────────────────────────────────────────────────
   const send = useCallback((msg: object) => {
+    const type = (msg as Record<string, unknown>).type as string ?? "?";
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(msg));
+      log("info", `→ ${type}`);
+    } else {
+      log("warn", `→ ${type} DROPPED (WS not open — status: ${wsRef.current ? wsRef.current.readyState : "no socket"})`);
     }
-  }, []);
+  }, [log]);
 
   // ── connect ─────────────────────────────────────────────────────────────
   const connect = useCallback(async () => {
@@ -43,11 +53,13 @@ export function useSignaling(callbacks: SignalingCallbacks) {
 
     const { userId, username } = useAppStore.getState();
     const config = await getServerConfig();
+    log("info", `Connecting to ${config.ws_url} as '${username}' (${userId.slice(0, 8)}…)`);
     const ws = new WebSocket(config.ws_url);
     wsRef.current = ws;
     setWsStatus("connecting");
 
     ws.onopen = () => {
+      log("info", `WS open — sending register`);
       // No contacts in Register — server loads from DB
       ws.send(JSON.stringify({ type: "register", user_id: userId, username }));
     };
@@ -61,6 +73,16 @@ export function useSignaling(callbacks: SignalingCallbacks) {
       }
 
       const store = useAppStore.getState();
+
+      log("info", `← ${msg.type}${
+        msg.type === "error" ? `: ${msg.reason as string}` :
+        msg.type === "user_online" ? ` (${msg.user_id as string})` :
+        msg.type === "user_offline" ? ` (${msg.user_id as string})` :
+        msg.type === "contact_added" ? ` (${msg.user_id as string})` :
+        msg.type === "added_by_user" ? ` (${msg.user_id as string})` :
+        msg.type === "incoming_call" ? ` from ${msg.from as string}` :
+        ""
+      }`);
 
       switch (msg.type) {
         case "registered":
@@ -189,14 +211,17 @@ export function useSignaling(callbacks: SignalingCallbacks) {
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (evt) => {
+      log("warn", `WS closed (code ${evt.code}${evt.reason ? `: ${evt.reason}` : ""})`);
       setWsStatus("disconnected");
       // We have no presence feed while disconnected — mark everyone offline
       // so the UI never shows a stale "Online" badge.
       const s = useAppStore.getState();
       s.setContacts(s.contacts.map((c) => ({ ...c, online: false })));
     };
-    ws.onerror = (e) => console.error("[signaling] ws error", e);
+    ws.onerror = () => {
+      log("error", `WS error — check server URL in Settings and network connectivity`);
+    };
   }, [setWsStatus]);
 
   // ── disconnect ──────────────────────────────────────────────────────────
