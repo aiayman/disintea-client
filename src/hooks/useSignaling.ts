@@ -106,14 +106,21 @@ export function useSignaling(callbacks: SignalingCallbacks) {
           );
           break;
 
-        // Someone added us — add them to OUR list too (mutual discovery)
-        case "added_by_user":
-          store.upsertContact(
-            msg.user_id as string,
-            msg.username as string,
-            msg.online as boolean
-          );
+        // Someone added us — add them to OUR list AND persist it server-side
+        // so the contact survives reconnects (server only knows about contacts
+        // we explicitly added; upsertContact alone is client-side only).
+        case "added_by_user": {
+          const addedId = msg.user_id as string;
+          // Check BEFORE upsert so we know if this is genuinely new.
+          // If already in list → we already sent add_contact for them → skip
+          // to avoid an echo loop (server sends AddedByUser back to adder).
+          const alreadyAdded = store.contacts.some((c) => c.id === addedId);
+          store.upsertContact(addedId, msg.username as string, msg.online as boolean);
+          if (!alreadyAdded) {
+            send({ type: "add_contact", contact_id: addedId });
+          }
           break;
+        }
 
         // Historical messages
         case "message_history": {
@@ -177,6 +184,7 @@ export function useSignaling(callbacks: SignalingCallbacks) {
 
         case "error":
           console.error("[signaling] server error:", msg.reason);
+          alert(`Server error: ${msg.reason as string}`);
           break;
       }
     };
