@@ -34,6 +34,47 @@ export async function savePttKeys(keys: string[]): Promise<void> {
   localStorage.setItem(PTT_LS_KEY, JSON.stringify(keys));
 }
 
+/** Convert a KeyboardEvent to a Tauri-compatible accelerator string */
+export function normalizeKey(e: KeyboardEvent): string {
+  const mods: string[] = [];
+  if (e.ctrlKey) mods.push("Ctrl");
+  if (e.altKey) mods.push("Alt");
+  if (e.shiftKey) mods.push("Shift");
+  const k = e.code === "Space" ? "Space" : e.key.length === 1 ? e.key.toUpperCase() : e.code;
+  return [...mods, k].join("+");
+}
+
+/** Convert a MouseEvent button index to a stable string identifier */
+export function normalizeMouseButton(e: MouseEvent): string {
+  const names: Record<number, string> = {
+    0: "MouseLeft", 1: "MouseMiddle", 2: "MouseRight", 3: "MouseBack", 4: "MouseForward",
+  };
+  return names[e.button] ?? `Mouse${e.button}`;
+}
+
+const GAMEPAD_BUTTON_NAMES: Record<number, string> = {
+  0: "A / Cross",   1: "B / Circle", 2: "X / Square", 3: "Y / Triangle",
+  4: "LB / L1",     5: "RB / R1",   6: "LT / L2",    7: "RT / R2",
+  8: "Back / Share", 9: "Start / Options",
+  10: "L3", 11: "R3",
+  12: "D\u2191", 13: "D\u2193", 14: "D\u2190", 15: "D\u2192", 16: "Home",
+};
+
+/** Format a stored PTT identifier for human-readable display */
+export function formatPttKey(key: string): string {
+  if (key.startsWith("GP:B")) {
+    const idx = parseInt(key.slice(4), 10);
+    return `\uD83C\uDFAE ${GAMEPAD_BUTTON_NAMES[idx] ?? `Button ${idx}`}`;
+  }
+  const mouseLabels: Record<string, string> = {
+    MouseLeft: "\uD83D\uDDB1 Left Click",   MouseMiddle: "\uD83D\uDDB1 Middle Click",
+    MouseRight: "\uD83D\uDDB1 Right Click",  MouseBack: "\uD83D\uDDB1 Back",
+    MouseForward: "\uD83D\uDDB1 Forward",
+  };
+  if (key in mouseLabels) return mouseLabels[key];
+  return key;
+}
+
 /**
  * Manages push-to-talk: registers/unregisters OS-level global shortcuts (Tauri only)
  * and toggles the mic track when keys are pressed/released.
@@ -53,24 +94,14 @@ export function usePushToTalk(
   useEffect(() => { micModeRef.current = micMode; }, [micMode]);
   useEffect(() => { pttKeysRef.current = pttKeys; }, [pttKeys]);
 
-  // ── DOM keyboard listeners (primary PTT mechanism when app is focused) ──
-  // Uses the same key normalisation as Settings so stored keys match exactly.
+  // ── DOM keyboard + mouse listeners (primary PTT mechanism when app is focused) ──
   useEffect(() => {
-    const normalizeKey = (e: KeyboardEvent): string => {
-      const mods: string[] = [];
-      if (e.ctrlKey) mods.push("Ctrl");
-      if (e.altKey) mods.push("Alt");
-      if (e.shiftKey) mods.push("Shift");
-      const k = e.code === "Space" ? "Space" : e.key.length === 1 ? e.key.toUpperCase() : e.code;
-      return [...mods, k].join("+");
-    };
-
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.repeat) return; // held-key repeat events — ignore
+      if (e.repeat) return;
       if (micModeRef.current !== "push_to_talk") return;
       if (isMutedRef.current) return;
       if (!pttKeysRef.current.includes(normalizeKey(e))) return;
-      // Don't intercept keystrokes when the user is typing in a text field
+      // Skip when the user is typing in a text field
       const el = document.activeElement as HTMLElement | null;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
       e.preventDefault();
@@ -86,12 +117,67 @@ export function usePushToTalk(
       }
     };
 
+    const onMouseDown = (e: MouseEvent) => {
+      if (micModeRef.current !== "push_to_talk") return;
+      if (isMutedRef.current) return;
+      if (pttKeysRef.current.includes(normalizeMouseButton(e))) {
+        setMicEnabled(true);
+        setPttActive(true);
+      }
+    };
+
+    const onMouseUp = (e: MouseEvent) => {
+      if (micModeRef.current !== "push_to_talk") return;
+      if (pttKeysRef.current.includes(normalizeMouseButton(e))) {
+        setMicEnabled(false);
+        setPttActive(false);
+      }
+    };
+
     document.addEventListener("keydown", onKeyDown);
     document.addEventListener("keyup", onKeyUp);
+    document.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("mouseup", onMouseUp);
     return () => {
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("keyup", onKeyUp);
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("mouseup", onMouseUp);
     };
+  }, [setMicEnabled, setPttActive]);
+
+  // ── Gamepad polling via requestAnimationFrame (works while app is focused) ──
+  useEffect(() => {
+    let raf: number;
+    const prevStates = new Map<number, boolean[]>();
+
+    const poll = () => {
+      if (micModeRef.current === "push_to_talk") {
+        for (const gp of navigator.getGamepads()) {
+          if (!gp) continue;
+          const prev = prevStates.get(gp.index) ?? (new Array(gp.buttons.length).fill(false) as boolean[]);
+          for (let i = 0; i < gp.buttons.length; i++) {
+            const key = `GP:B${i}`;
+            const pressed = gp.buttons[i].pressed;
+            if (pttKeysRef.current.includes(key)) {
+              if (pressed && !prev[i] && !isMutedRef.current) {
+                setMicEnabled(true);
+                setPttActive(true);
+              } else if (!pressed && prev[i]) {
+                setMicEnabled(false);
+                setPttActive(false);
+              }
+            }
+            prev[i] = pressed;
+          }
+          prevStates.set(gp.index, prev);
+        }
+      }
+      raf = requestAnimationFrame(poll);
+    };
+
+    raf = requestAnimationFrame(poll);
+    return () => cancelAnimationFrame(raf);
   }, [setMicEnabled, setPttActive]);
 
   /** Re-register all PTT shortcuts (Tauri only) */

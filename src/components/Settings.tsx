@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useAppStore } from "../store/appStore";
-import { usePushToTalk } from "../hooks/usePushToTalk";
+import { usePushToTalk, normalizeKey, normalizeMouseButton, formatPttKey } from "../hooks/usePushToTalk";
 import { isTauri } from "../lib/tauri-compat";
 
 interface Props {
@@ -30,23 +30,62 @@ export function Settings({ onClose, setMicEnabled, onReconnect }: Props) {
 
   const startBinding = () => {
     setBinding(true);
+    let done = false;
+    let gpRaf = 0;
+
+    const finish = async (inputId: string) => {
+      if (done) return;
+      done = true;
+      setBinding(false);
+      cleanup();
+      await addKey(inputId);
+    };
 
     const onKeyDown = async (e: KeyboardEvent) => {
       e.preventDefault();
-      const key = normalizeKey(e);
-      setBinding(false);
+      await finish(normalizeKey(e));
+    };
+
+    const onMouseDown = async (e: MouseEvent) => {
+      e.preventDefault();
+      await finish(normalizeMouseButton(e));
+    };
+
+    const prevGPButtons = new Map<number, boolean[]>();
+    const pollGamepad = async (): Promise<void> => {
+      for (const gp of navigator.getGamepads()) {
+        if (!gp) continue;
+        const prev = prevGPButtons.get(gp.index) ?? (new Array(gp.buttons.length).fill(false) as boolean[]);
+        for (let i = 0; i < gp.buttons.length; i++) {
+          if (gp.buttons[i].pressed && !prev[i]) {
+            await finish(`GP:B${i}`);
+            return;
+          }
+          prev[i] = gp.buttons[i].pressed;
+        }
+        prevGPButtons.set(gp.index, prev);
+      }
+      if (!done) gpRaf = requestAnimationFrame(() => { void pollGamepad(); });
+    };
+
+    const cleanup = () => {
       window.removeEventListener("keydown", onKeyDown);
-      await addKey(key);
+      window.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("blur", onBlur);
+      cancelAnimationFrame(gpRaf);
+    };
+
+    const onBlur = () => {
+      done = true;
+      setBinding(false);
+      cleanup();
     };
 
     window.addEventListener("keydown", onKeyDown);
-
-    const onBlur = () => {
-      setBinding(false);
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("blur", onBlur);
-    };
+    // Delay mouse listener slightly to avoid capturing the click that opened binding
+    setTimeout(() => { if (!done) window.addEventListener("mousedown", onMouseDown); }, 200);
     window.addEventListener("blur", onBlur);
+    gpRaf = requestAnimationFrame(() => { void pollGamepad(); });
   };
 
   const handleDone = () => {
@@ -112,15 +151,15 @@ export function Settings({ onClose, setMicEnabled, onReconnect }: Props) {
         <section className="flex flex-col gap-3">
           <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">Push to Talk</h3>
           <p className="text-xs text-gray-500">
-            Hold any bound key to unmute your mic. You can bind multiple keys.
+            Hold any bound key, mouse button, or controller button to unmute. You can bind multiple.
           </p>
           <div className="flex flex-wrap gap-2">
             {pttKeys.map((key) => (
               <div
                 key={key}
-                className="flex items-center gap-1.5 bg-gray-700 rounded-lg px-3 py-1.5 text-sm font-mono text-white"
+                className="flex items-center gap-1.5 bg-gray-700 rounded-lg px-3 py-1.5 text-sm text-white"
               >
-                {key}
+                {formatPttKey(key)}
                 <button
                   onClick={() => removeKey(key)}
                   className="text-gray-400 hover:text-red-400 ml-1 text-xs"
@@ -141,7 +180,7 @@ export function Settings({ onClose, setMicEnabled, onReconnect }: Props) {
                 : "bg-gray-700 hover:bg-gray-600 text-gray-200"}
             `}
           >
-            {binding ? "Press a key to bind…" : "+ Add PTT Key"}
+            {binding ? "Press a key, mouse button or controller button…" : "+ Add PTT Key"}
           </button>
         </section>
         )}
@@ -224,12 +263,4 @@ export function Settings({ onClose, setMicEnabled, onReconnect }: Props) {
   );
 }
 
-/** Convert a KeyboardEvent into a Tauri-compatible accelerator string */
-function normalizeKey(e: KeyboardEvent): string {
-  const mods: string[] = [];
-  if (e.ctrlKey) mods.push("Ctrl");
-  if (e.altKey) mods.push("Alt");
-  if (e.shiftKey) mods.push("Shift");
-  const key = e.code === "Space" ? "Space" : e.key.length === 1 ? e.key.toUpperCase() : e.code;
-  return [...mods, key].join("+");
-}
+
