@@ -59,9 +59,16 @@ export default function App() {
 
   const signalingCallbacks = {
     onIncomingCall: useCallback((from: string, fromName: string, sdp: string) => {
-      if (useAppStore.getState().callState !== "idle") return;
-      useAppStore.getState().setIncomingCall({ from, fromName, sdp });
-      useAppStore.getState().setCallState("ringing");
+      const state = useAppStore.getState();
+      // Renegotiation re-offer from the current peer (e.g. starting screen share)
+      // — process it silently without touching call state or UI.
+      if (state.callState === "in_call" && state.callPeerId === from) {
+        void handleOfferRef.current(sdp, from, sendRef.current);
+        return;
+      }
+      if (state.callState !== "idle") return;
+      state.setIncomingCall({ from, fromName, sdp });
+      state.setCallState("ringing");
     }, []),
 
     onCallAnswered: useCallback((from: string, sdp: string) => {

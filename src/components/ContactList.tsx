@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { PhoneIcon } from "@heroicons/react/24/solid";
 import { useAppStore } from "../store/appStore";
 
 interface Props {
@@ -127,7 +128,7 @@ export function ContactList({ onStartChat, onStartCall, onAddContact, onRemoveCo
                     }`}
                     title="Call"
                   >
-                    📞
+                    <PhoneIcon className="h-4 w-4" />
                   </button>
                   <button
                     onClick={() => onRemoveContact(c.id)}

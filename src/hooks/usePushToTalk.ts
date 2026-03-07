@@ -69,11 +69,13 @@ export function usePushToTalk(
       if (e.repeat) return; // held-key repeat events — ignore
       if (micModeRef.current !== "push_to_talk") return;
       if (isMutedRef.current) return;
-      if (pttKeysRef.current.includes(normalizeKey(e))) {
-        e.preventDefault();
-        setMicEnabled(true);
-        setPttActive(true);
-      }
+      if (!pttKeysRef.current.includes(normalizeKey(e))) return;
+      // Don't intercept keystrokes when the user is typing in a text field
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      e.preventDefault();
+      setMicEnabled(true);
+      setPttActive(true);
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
