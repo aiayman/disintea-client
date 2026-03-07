@@ -37,6 +37,7 @@ export function ContactList({ onStartChat, onStartCall, onAddContact, onRemoveCo
       {/* Header */}
       <div className="flex items-center justify-between border-b border-gray-700 px-4 py-3">
         <div className="flex items-center gap-2">
+          <img src="/disintea-darkicon.svg" alt="Disintea" className="h-6 w-6" />
           <span className={`h-2.5 w-2.5 rounded-full ${wsColor}`} title={wsStatus} />
           <span className="font-semibold">{username}</span>
         </div>

@@ -36,6 +36,13 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Set app version from tag
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          jq --arg ver "$VERSION" '.version = $ver' src-tauri/tauri.conf.json > tmp.json && mv tmp.json src-tauri/tauri.conf.json
+          echo "Set tauri version to $VERSION"
+
       - name: Build Tauri app (Windows)
         env:
           SIGNALING_URL: ${{ secrets.SIGNALING_URL }}
@@ -89,6 +96,12 @@ jobs:
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Set app version from tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          jq --arg ver "$VERSION" '.version = $ver' src-tauri/tauri.conf.json > tmp.json && mv tmp.json src-tauri/tauri.conf.json
+          echo "Set tauri version to $VERSION"
 
       - name: Build Tauri app (Linux)
         env:
