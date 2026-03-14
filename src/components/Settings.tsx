@@ -125,7 +125,12 @@ export function Settings({ onClose, setMicEnabled, onReconnect }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-bold text-white">Settings</h2>
+          <div>
+            <h2 className="text-lg font-bold text-white">Settings</h2>
+            {appVersion && (
+              <p className="text-xs text-gray-500 mt-0.5">Disintea v{appVersion}</p>
+            )}
+          </div>
           <button className="text-gray-400 hover:text-white text-xl" onClick={handleDone}>×</button>
         </div>
 
@@ -266,10 +271,6 @@ export function Settings({ onClose, setMicEnabled, onReconnect }: Props) {
         >
           Done
         </button>
-
-        {appVersion && (
-          <p className="text-center text-xs text-gray-600">Disintea v{appVersion}</p>
-        )}
       </div>
     </div>
   );

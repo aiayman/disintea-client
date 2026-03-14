@@ -150,8 +150,9 @@ jobs:
           DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           TAG="${GITHUB_REF_NAME}"
 
-          # Find NSIS installer + sig (preferred over MSI for updater)
-          WIN_EXE=$(find release-artifacts -name "*.nsis.exe" ! -name "*.sig" | head -1)
+          # Find NSIS installer + sig
+          # Tauri v2 names it: {productName}_{version}_x64-setup.exe
+          WIN_EXE=$(find release-artifacts -name "*-setup.exe" ! -name "*.sig" | head -1)
           WIN_SIG=""
           if [ -n "$WIN_EXE" ] && [ -f "${WIN_EXE}.sig" ]; then
             WIN_SIG=$(cat "${WIN_EXE}.sig")
