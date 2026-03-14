@@ -49,12 +49,24 @@ jobs:
           TURN_URL: ${{ secrets.TURN_URL }}
           TURN_SECRET: ${{ secrets.TURN_SECRET }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm tauri build --bundles msi,nsis
 
       - name: List bundle output
         shell: bash
         run: find src-tauri/target/release/bundle -type f 2>/dev/null || echo "No bundle output found"
+
+      - name: Verify Windows signature files exist
+        shell: bash
+        run: |
+          echo "=== Searching for .sig files ==="
+          find src-tauri/target/release/bundle -name "*.sig" -type f
+          sig_count=$(find src-tauri/target/release/bundle -name "*.sig" -type f | wc -l)
+          echo "Found ${sig_count} .sig file(s)"
+          if [ "$sig_count" -eq 0 ]; then
+            echo "ERROR: No .sig files produced. Check that TAURI_SIGNING_PRIVATE_KEY is set in repository secrets."
+            exit 1
+          fi
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
@@ -113,11 +125,22 @@ jobs:
           TURN_URL: ${{ secrets.TURN_URL }}
           TURN_SECRET: ${{ secrets.TURN_SECRET }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm tauri build --bundles appimage,deb
 
       - name: List bundle output
         run: find src-tauri/target/release/bundle -type f 2>/dev/null || echo "No bundle output found"
+
+      - name: Verify Linux signature files exist
+        run: |
+          echo "=== Searching for .sig files ==="
+          find src-tauri/target/release/bundle -name "*.sig" -type f
+          sig_count=$(find src-tauri/target/release/bundle -name "*.sig" -type f | wc -l)
+          echo "Found ${sig_count} .sig file(s)"
+          if [ "$sig_count" -eq 0 ]; then
+            echo "ERROR: No .sig files produced. Check that TAURI_SIGNING_PRIVATE_KEY is set in repository secrets."
+            exit 1
+          fi
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4

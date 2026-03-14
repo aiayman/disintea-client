@@ -26,11 +26,27 @@ def find_file(pattern):
 
 
 def read_sig(path):
-    """Return the contents of <path>.sig, stripped of whitespace."""
+    """Return the contents of the .sig file for the given binary path.
+
+    Tries two locations:
+    1. <path>.sig  — the canonical location (same directory, same name + .sig)
+    2. A recursive glob for <basename>.sig anywhere under release-artifacts/
+       (fallback for unexpected artifact directory layouts)
+    """
+    # 1. Canonical: right next to the binary
     sig_path = path + ".sig"
     if os.path.isfile(sig_path):
         with open(sig_path, "r") as f:
             return f.read().strip()
+
+    # 2. Fallback: search the whole artifact tree
+    basename = os.path.basename(path)
+    matches = glob.glob(f"release-artifacts/**/{basename}.sig", recursive=True)
+    if matches:
+        print(f"NOTE: found .sig via fallback search at {matches[0]}", flush=True)
+        with open(matches[0], "r") as f:
+            return f.read().strip()
+
     return ""
 
 
@@ -41,6 +57,13 @@ def main():
 
     version, tag, pub_date, repo = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
     base_url = f"https://github.com/{repo}/releases/download/{tag}"
+
+    # Dump all artifact files for debugging — makes it obvious if .sig is missing
+    print("=== Artifact tree ===", flush=True)
+    for root, _, files in os.walk("release-artifacts"):
+        for fname in sorted(files):
+            print(os.path.join(root, fname), flush=True)
+    print("=====================", flush=True)
 
     manifest = {
         "version": version,
