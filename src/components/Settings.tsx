@@ -3,6 +3,8 @@ import { useAppStore } from "../store/appStore";
 import { usePushToTalk, normalizeKey, normalizeMouseButton, formatPttKey } from "../hooks/usePushToTalk";
 import { isTauri } from "../lib/tauri-compat";
 import { getVersion } from "@tauri-apps/api/app";
+import { check, type Update } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 
 interface Props {
   onClose: () => void;
@@ -18,6 +20,8 @@ export function Settings({ onClose, setMicEnabled, onReconnect }: Props) {
   const [urlDraft, setUrlDraft] = useState(serverUrl);
   const [showDiag, setShowDiag] = useState(false);
   const [appVersion, setAppVersion] = useState<string | null>(null);
+  const [updateState, setUpdateState] = useState<"idle" | "checking" | "available" | "up_to_date" | "installing" | "error">("idle");
+  const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -112,6 +116,33 @@ export function Settings({ onClose, setMicEnabled, onReconnect }: Props) {
       .map((e) => `[${new Date(e.ts).toISOString()}] [${e.level.toUpperCase()}] ${e.msg}`)
       .join("\n");
     navigator.clipboard?.writeText(text).catch(() => {});
+  };
+
+  const checkForUpdates = async () => {
+    if (!isTauri()) return;
+    setUpdateState("checking");
+    try {
+      const update = await check();
+      if (update?.available) {
+        setPendingUpdate(update);
+        setUpdateState("available");
+      } else {
+        setUpdateState("up_to_date");
+      }
+    } catch {
+      setUpdateState("error");
+    }
+  };
+
+  const installUpdate = async () => {
+    if (!pendingUpdate) return;
+    setUpdateState("installing");
+    try {
+      await pendingUpdate.downloadAndInstall();
+      await relaunch();
+    } catch {
+      setUpdateState("error");
+    }
   };
 
   const wsColor =
@@ -264,6 +295,40 @@ export function Settings({ onClose, setMicEnabled, onReconnect }: Props) {
             </div>
           )}
         </section>
+
+        {/* Updates — Tauri desktop only */}
+        {isTauri() && (
+        <section className="flex flex-col gap-3">
+          <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">Updates</h3>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs text-gray-400">
+              {updateState === "idle" && "Click to check for a new version."}
+              {updateState === "checking" && "Checking for updates…"}
+              {updateState === "up_to_date" && "You're on the latest version."}
+              {updateState === "available" && `Version ${pendingUpdate?.version} is available.`}
+              {updateState === "installing" && "Downloading and installing…"}
+              {updateState === "error" && "Could not reach the update server. Try again later."}
+            </span>
+            {updateState !== "available" && updateState !== "installing" && (
+              <button
+                onClick={() => { void checkForUpdates(); }}
+                disabled={updateState === "checking"}
+                className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-200 disabled:opacity-50 transition-colors"
+              >
+                {updateState === "checking" ? "Checking…" : "Check Now"}
+              </button>
+            )}
+            {updateState === "available" && (
+              <button
+                onClick={() => { void installUpdate(); }}
+                className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors"
+              >
+                Install & Restart
+              </button>
+            )}
+          </div>
+        </section>
+        )}
 
         <button
           className="mt-2 w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-2.5 rounded-lg transition-colors"

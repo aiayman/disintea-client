@@ -146,52 +146,76 @@ jobs:
 
       - name: Generate latest.json update manifest
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          TAG="${GITHUB_REF_NAME}"
+          # Let Python do all the filesystem reading — avoids multiline shell
+          # variable expansion inside heredocs breaking signature embedding.
+          python3 - \
+            "${GITHUB_REF_NAME#v}" \
+            "${GITHUB_REF_NAME}" \
+            "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+            "${GITHUB_REPOSITORY}" \
+            <<'PYEOF'
+import sys, json, glob, os
 
-          # Find NSIS installer + sig
-          # Tauri v2 names it: {productName}_{version}_x64-setup.exe
-          WIN_EXE=$(find release-artifacts -name "*-setup.exe" ! -name "*.sig" | head -1)
-          WIN_SIG=""
-          if [ -n "$WIN_EXE" ] && [ -f "${WIN_EXE}.sig" ]; then
-            WIN_SIG=$(cat "${WIN_EXE}.sig")
-          fi
-          WIN_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/$(basename "$WIN_EXE")"
+version, tag, pub_date, repo = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+base_url = f"https://github.com/{repo}/releases/download/{tag}"
 
-          # Find AppImage + sig
-          LINUX_AI=$(find release-artifacts -name "*.AppImage" ! -name "*.sig" | head -1)
-          LINUX_SIG=""
-          if [ -n "$LINUX_AI" ] && [ -f "${LINUX_AI}.sig" ]; then
-            LINUX_SIG=$(cat "${LINUX_AI}.sig")
-          fi
-          LINUX_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/$(basename "$LINUX_AI")"
+def find_file(pattern):
+    # Search recursively under release-artifacts/
+    matches = [p for p in glob.glob(f"release-artifacts/**/{pattern}", recursive=True)
+               if not p.endswith(".sig")]
+    return matches[0] if matches else None
 
-          python3 - <<PYEOF
-          import json, os
-          manifest = {
-            "version": os.environ.get("VERSION", "${VERSION}"),
-            "notes": "Disintea ${TAG}",
-            "pub_date": "${DATE}",
-            "platforms": {}
-          }
-          win_sig = """${WIN_SIG}"""
-          linux_sig = """${LINUX_SIG}"""
-          if win_sig.strip():
-            manifest["platforms"]["windows-x86_64"] = {
-              "signature": win_sig.strip(),
-              "url": "${WIN_URL}"
-            }
-          if linux_sig.strip():
-            manifest["platforms"]["linux-x86_64"] = {
-              "signature": linux_sig.strip(),
-              "url": "${LINUX_URL}"
-            }
-          with open("latest.json", "w") as f:
-            json.dump(manifest, f, indent=2)
-          print("Generated latest.json:")
-          print(json.dumps(manifest, indent=2))
-          PYEOF
+def read_sig(path):
+    sig_path = path + ".sig"
+    if os.path.isfile(sig_path):
+        return open(sig_path, "r").read().strip()
+    return ""
+
+manifest = {
+    "version": version,
+    "notes": f"Disintea {tag}",
+    "pub_date": pub_date,
+    "platforms": {}
+}
+
+# Windows NSIS — Tauri v2 names it: {ProductName}_{ver}_x64-setup.exe
+win_exe = find_file("*-setup.exe")
+if win_exe:
+    sig = read_sig(win_exe)
+    if sig:
+        manifest["platforms"]["windows-x86_64"] = {
+            "signature": sig,
+            "url": f"{base_url}/{os.path.basename(win_exe)}"
+        }
+    else:
+        print(f"WARNING: no .sig for {win_exe}", flush=True)
+else:
+    print("WARNING: no *-setup.exe found in release-artifacts", flush=True)
+
+# Linux AppImage — Tauri v2 names it: {ProductName}_{ver}_amd64.AppImage
+linux_ai = find_file("*.AppImage")
+if linux_ai:
+    sig = read_sig(linux_ai)
+    if sig:
+        manifest["platforms"]["linux-x86_64"] = {
+            "signature": sig,
+            "url": f"{base_url}/{os.path.basename(linux_ai)}"
+        }
+    else:
+        print(f"WARNING: no .sig for {linux_ai}", flush=True)
+else:
+    print("WARNING: no *.AppImage found in release-artifacts", flush=True)
+
+if not manifest["platforms"]:
+    print("ERROR: latest.json has no platforms — update delivery will not work!", flush=True)
+    sys.exit(1)
+
+with open("latest.json", "w") as f:
+    json.dump(manifest, f, indent=2)
+
+print("Generated latest.json:")
+print(json.dumps(manifest, indent=2))
+PYEOF
 
       - name: Create release
         uses: softprops/action-gh-release@v2
