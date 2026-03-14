@@ -14,7 +14,7 @@ function RemoteAudio({ stream }: { stream: MediaStream }) {
 }
 
 /** Renders a remote video stream (e.g. screen share). */
-function RemoteVideo({ stream, label }: { stream: MediaStream; label?: string }) {
+function RemoteVideo({ stream, label, fill }: { stream: MediaStream; label?: string; fill?: boolean }) {
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     if (!ref.current) return;
@@ -23,8 +23,18 @@ function RemoteVideo({ stream, label }: { stream: MediaStream; label?: string })
   }, [stream]);
   const hasVideo = stream.getVideoTracks().some((t) => t.readyState === "live");
   if (!hasVideo) return null;
+  if (fill) {
+    return (
+      <div className="relative flex-1 min-h-0 overflow-hidden bg-black">
+        <video ref={ref} autoPlay playsInline className="w-full h-full object-contain" />
+        {label && (
+          <span className="absolute bottom-2 left-3 text-xs text-white bg-black/50 rounded px-1.5 py-0.5">{label}</span>
+        )}
+      </div>
+    );
+  }
   return (
-    <div className="relative rounded-xl overflow-hidden bg-black shadow-lg w-full" style={{ maxHeight: "55vh" }}>
+    <div className="relative rounded-xl overflow-hidden bg-black shadow-lg w-full">
       <video ref={ref} autoPlay playsInline className="w-full h-full object-contain" />
       {label && (
         <span className="absolute bottom-2 left-3 text-xs text-white bg-black/50 rounded px-1.5 py-0.5">{label}</span>
@@ -86,6 +96,100 @@ export function CallScreen({ remoteStreams, onHangUp, onToggleMute, onToggleMode
     setPttActive(false);
   };
 
+  // True when at least one remote peer is sending live video (screen share)
+  const anyRemoteHasVideo = inCall && [...remoteStreams.entries()].some(
+    ([, s]) => s.getVideoTracks().some((t) => t.readyState === "live")
+  );
+
+  // ── Screen-share full-screen layout ─────────────────────────────────
+  if (anyRemoteHasVideo) {
+    return (
+      <div className="flex h-screen flex-col bg-black text-white overflow-hidden">
+        {/* Hidden audio elements */}
+        {[...remoteStreams.entries()].map(([peerId, stream]) => (
+          <RemoteAudio key={peerId} stream={stream} />
+        ))}
+
+        {/* Compact top bar */}
+        <div className="flex items-center justify-between px-4 py-2 bg-gray-900/80 backdrop-blur-sm z-10 shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-700 text-sm font-bold">
+              {displayName[0]?.toUpperCase()}
+            </div>
+            <span className="text-sm font-medium">{displayName}</span>
+          </div>
+          {inCall && <span className="font-mono text-sm text-indigo-300">{fmt(elapsed)}</span>}
+        </div>
+
+        {/* Video tiles — fill all remaining space */}
+        <div className="flex flex-col flex-1 min-h-0">
+          {[...remoteStreams.entries()].map(([peerId, stream]) => {
+            const c = contacts.find((ct) => ct.id === peerId);
+            return <RemoteVideo key={peerId} stream={stream} label={c?.name ?? peerId.slice(0, 8)} fill />;
+          })}
+        </div>
+
+        {/* Floating bottom controls */}
+        <div className="flex items-center justify-center gap-4 px-6 py-3 bg-gray-900/90 backdrop-blur-sm shrink-0">
+          <button
+            onClick={onToggleMute}
+            className={`flex h-12 w-12 items-center justify-center rounded-full text-xl shadow-lg transition active:scale-95 ${
+              isMuted ? "bg-red-700 hover:bg-red-600" : "bg-gray-700 hover:bg-gray-600"
+            }`}
+            title={isMuted ? "Unmute" : "Mute"}
+          >
+            {isMuted ? "🔇" : "🎙"}
+          </button>
+
+          <button
+            onClick={onToggleMode}
+            className={`flex h-12 w-12 items-center justify-center rounded-full text-sm font-bold shadow-lg transition active:scale-95 ${
+              micMode === "push_to_talk"
+                ? "bg-indigo-600 hover:bg-indigo-500 text-white"
+                : "bg-gray-700 hover:bg-gray-600 text-gray-300"
+            }`}
+            title={micMode === "always_on" ? "Switch to Push to Talk" : "Switch to Always On"}
+          >
+            {micMode === "always_on" ? "PTT" : "AON"}
+          </button>
+
+          {micMode === "push_to_talk" && (
+            <button
+              onPointerDown={handlePttDown}
+              onPointerUp={handlePttUp}
+              onPointerLeave={handlePttUp}
+              className={`flex h-14 w-14 items-center justify-center rounded-full text-3xl shadow-xl select-none transition-transform ${
+                isPttActive
+                  ? "bg-green-500 scale-110 ring-4 ring-green-300"
+                  : "bg-gray-700 hover:bg-gray-600"
+              }`}
+              title="Hold to talk"
+            >
+              🎤
+            </button>
+          )}
+
+          <button
+            onClick={onToggleScreenShare}
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-green-600 hover:bg-green-500 text-white text-xl shadow-lg transition active:scale-95"
+            title="Stop Screen Share"
+          >
+            🖥
+          </button>
+
+          <button
+            onClick={onHangUp}
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-red-600 text-2xl shadow-lg transition hover:bg-red-500 active:scale-95"
+            title="Hang up"
+          >
+            📵
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Standard audio-call layout ──────────────────────────────────────
   return (
     <div className="flex h-screen flex-col items-center justify-between bg-gray-900 py-8 text-white overflow-hidden">
       {/* Hidden audio for all peers */}
@@ -95,27 +199,15 @@ export function CallScreen({ remoteStreams, onHangUp, onToggleMute, onToggleMode
 
       {/* Contact info */}
       <div className="flex flex-col items-center gap-3">
-        {!isScreenSharing && (
-          <div className="flex h-24 w-24 items-center justify-center rounded-full bg-indigo-700 text-5xl font-bold">
-            {displayName[0]?.toUpperCase()}
-          </div>
-        )}
+        <div className="flex h-24 w-24 items-center justify-center rounded-full bg-indigo-700 text-5xl font-bold">
+          {displayName[0]?.toUpperCase()}
+        </div>
         <p className="text-2xl font-semibold">{displayName}</p>
         <p className="text-sm text-gray-400">{statusLabel}</p>
         {inCall && (
           <p className="font-mono text-lg text-indigo-300">{fmt(elapsed)}</p>
         )}
       </div>
-
-      {/* Remote video tiles (screen share) */}
-      {inCall && [...remoteStreams.entries()].some(([, s]) => s.getVideoTracks().some(t => t.readyState === "live")) && (
-        <div className="w-full flex-1 flex flex-col gap-2 px-4 overflow-y-auto">
-          {[...remoteStreams.entries()].map(([peerId, stream]) => {
-            const c = contacts.find((ct) => ct.id === peerId);
-            return <RemoteVideo key={peerId} stream={stream} label={c?.name ?? peerId.slice(0, 8)} />;
-          })}
-        </div>
-      )}
 
       {/* PTT hold button — only visible in push_to_talk mode while in the call */}
       {inCall && micMode === "push_to_talk" ? (

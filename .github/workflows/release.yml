@@ -48,6 +48,8 @@ jobs:
           SIGNALING_URL: ${{ secrets.SIGNALING_URL }}
           TURN_URL: ${{ secrets.TURN_URL }}
           TURN_SECRET: ${{ secrets.TURN_SECRET }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         run: pnpm tauri build --bundles msi,nsis
 
       - name: List bundle output
@@ -61,7 +63,9 @@ jobs:
           if-no-files-found: error
           path: |
             src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/msi/*.sig
             src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/nsis/*.sig
 
   build-linux:
     name: Build Linux (.AppImage / .deb)
@@ -108,6 +112,8 @@ jobs:
           SIGNALING_URL: ${{ secrets.SIGNALING_URL }}
           TURN_URL: ${{ secrets.TURN_URL }}
           TURN_SECRET: ${{ secrets.TURN_SECRET }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         run: pnpm tauri build --bundles appimage,deb
 
       - name: List bundle output
@@ -120,6 +126,7 @@ jobs:
           if-no-files-found: error
           path: |
             src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/appimage/*.sig
             src-tauri/target/release/bundle/deb/*.deb
 
   release:
@@ -137,6 +144,54 @@ jobs:
       - name: List release artifacts
         run: find release-artifacts -type f
 
+      - name: Generate latest.json update manifest
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          TAG="${GITHUB_REF_NAME}"
+
+          # Find NSIS installer + sig (preferred over MSI for updater)
+          WIN_EXE=$(find release-artifacts -name "*.nsis.exe" ! -name "*.sig" | head -1)
+          WIN_SIG=""
+          if [ -n "$WIN_EXE" ] && [ -f "${WIN_EXE}.sig" ]; then
+            WIN_SIG=$(cat "${WIN_EXE}.sig")
+          fi
+          WIN_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/$(basename "$WIN_EXE")"
+
+          # Find AppImage + sig
+          LINUX_AI=$(find release-artifacts -name "*.AppImage" ! -name "*.sig" | head -1)
+          LINUX_SIG=""
+          if [ -n "$LINUX_AI" ] && [ -f "${LINUX_AI}.sig" ]; then
+            LINUX_SIG=$(cat "${LINUX_AI}.sig")
+          fi
+          LINUX_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/$(basename "$LINUX_AI")"
+
+          python3 - <<PYEOF
+          import json, os
+          manifest = {
+            "version": os.environ.get("VERSION", "${VERSION}"),
+            "notes": "Disintea ${TAG}",
+            "pub_date": "${DATE}",
+            "platforms": {}
+          }
+          win_sig = """${WIN_SIG}"""
+          linux_sig = """${LINUX_SIG}"""
+          if win_sig.strip():
+            manifest["platforms"]["windows-x86_64"] = {
+              "signature": win_sig.strip(),
+              "url": "${WIN_URL}"
+            }
+          if linux_sig.strip():
+            manifest["platforms"]["linux-x86_64"] = {
+              "signature": linux_sig.strip(),
+              "url": "${LINUX_URL}"
+            }
+          with open("latest.json", "w") as f:
+            json.dump(manifest, f, indent=2)
+          print("Generated latest.json:")
+          print(json.dumps(manifest, indent=2))
+          PYEOF
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
@@ -149,6 +204,7 @@ jobs:
             release-artifacts/**/*.exe
             release-artifacts/**/*.AppImage
             release-artifacts/**/*.deb
+            latest.json
           body: |
             ## Disintea ${{ github.ref_name }}
 

@@ -11,11 +11,42 @@ import { ChatPanel } from "./components/ChatPanel";
 import { CallScreen } from "./components/CallScreen";
 import { IncomingCallOverlay } from "./components/IncomingCallOverlay";
 import { Settings } from "./components/Settings";
+import { isTauri } from "./lib/tauri-compat";
+import { check, type Update } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 
 export default function App() {
   const [
     showSettings, setShowSettings,
   ] = useState(false);
+  const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null);
+  const [updateInstalling, setUpdateInstalling] = useState(false);
+
+  // Check for updates once on startup (Tauri only, non-blocking)
+  useEffect(() => {
+    if (!isTauri()) return;
+    const id = setTimeout(async () => {
+      try {
+        const update = await check();
+        if (update?.available) setPendingUpdate(update);
+      } catch (e) {
+        console.warn("[updater]", e);
+      }
+    }, 6000);
+    return () => clearTimeout(id);
+  }, []);
+
+  const handleInstallUpdate = useCallback(async () => {
+    if (!pendingUpdate || updateInstalling) return;
+    setUpdateInstalling(true);
+    try {
+      await pendingUpdate.downloadAndInstall();
+      await relaunch();
+    } catch (e) {
+      console.error("[updater]", e);
+      setUpdateInstalling(false);
+    }
+  }, [pendingUpdate, updateInstalling]);
   const {
     userId,
     callState,
@@ -239,6 +270,18 @@ export default function App() {
 
   return (
     <>
+      {pendingUpdate && (
+        <div className="fixed top-0 inset-x-0 z-50 flex items-center justify-between gap-3 bg-indigo-600 px-4 py-2.5 text-sm text-white shadow-lg">
+          <span>Update {pendingUpdate.version} is available</span>
+          <button
+            onClick={handleInstallUpdate}
+            disabled={updateInstalling}
+            className="rounded bg-white/20 px-3 py-1 font-medium hover:bg-white/30 disabled:opacity-50"
+          >
+            {updateInstalling ? "Installing…" : "Install & Restart"}
+          </button>
+        </div>
+      )}
       <ContactList
         userId={userId}
         onStartChat={setActiveChat}
