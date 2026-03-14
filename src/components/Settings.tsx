@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAppStore } from "../store/appStore";
 import { usePushToTalk, normalizeKey, normalizeMouseButton, formatPttKey } from "../hooks/usePushToTalk";
 import { isTauri } from "../lib/tauri-compat";
+import { getVersion } from "@tauri-apps/api/app";
 
 interface Props {
   onClose: () => void;
@@ -16,7 +17,14 @@ export function Settings({ onClose, setMicEnabled, onReconnect }: Props) {
   const [binding, setBinding] = useState(false);
   const [urlDraft, setUrlDraft] = useState(serverUrl);
   const [showDiag, setShowDiag] = useState(false);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
   const logEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isTauri()) {
+      getVersion().then(setAppVersion).catch(() => {});
+    }
+  }, []);
 
   useEffect(() => {
     navigator.mediaDevices.enumerateDevices().then((devices) => {
@@ -258,6 +266,10 @@ export function Settings({ onClose, setMicEnabled, onReconnect }: Props) {
         >
           Done
         </button>
+
+        {appVersion && (
+          <p className="text-center text-xs text-gray-600">Disintea v{appVersion}</p>
+        )}
       </div>
     </div>
   );
