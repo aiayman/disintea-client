@@ -64,7 +64,11 @@ export function ChatPanel({ contactId, onBack, onCall, onSendMessage, onLoadHist
   };
 
   return (
-    <div className="flex h-screen flex-col bg-gray-900 text-white">
+    <div
+      className="flex h-screen flex-col bg-gray-900 text-white"
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
       {/* Header */}
       <div className="flex items-center gap-3 border-b border-gray-700 px-4 py-3">
         <button
@@ -103,8 +107,6 @@ export function ChatPanel({ contactId, onBack, onCall, onSendMessage, onLoadHist
       {/* Messages */}
       <div
         className="flex-1 overflow-y-auto space-y-3 px-4 py-4"
-        onDragOver={handleDragOver}
-        onDrop={handleDrop}
       >
         {thread.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-gray-500">

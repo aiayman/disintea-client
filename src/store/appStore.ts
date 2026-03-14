@@ -161,8 +161,18 @@ export const useAppStore = create<AppStore>()(
           // before the history response did).
           const existing = s.messages[contactId] ?? [];
           const serverIds = new Set(msgs.map((m) => m.id));
+          // Keep local-only messages; for messages the server also returned, prefer
+          // the local version if it carries an image (the server may have stored a
+          // truncated/modified text for very large payloads).
           const localOnly = existing.filter((m) => !serverIds.has(m.id));
-          const merged = [...localOnly, ...msgs].sort((a, b) => a.timestamp - b.timestamp);
+          const serverMsgs = msgs.map((serverMsg) => {
+            const local = existing.find((e) => e.id === serverMsg.id);
+            if (local?.text.startsWith("__img__") && !serverMsg.text.startsWith("__img__")) {
+              return local; // keep the locally-stored image version
+            }
+            return serverMsg;
+          });
+          const merged = [...localOnly, ...serverMsgs].sort((a, b) => a.timestamp - b.timestamp);
           return { messages: { ...s.messages, [contactId]: merged } };
         }),
 
@@ -219,9 +229,14 @@ export const useAppStore = create<AppStore>()(
         audioDeviceId: s.audioDeviceId,
         serverUrl: s.serverUrl,
         micMode: s.micMode,
-        // Persist message threads (last 200 per thread) so history loads instantly
+        // Persist message threads (last 200 per thread) so history loads instantly.
+        // Image messages (base64 data URLs) are excluded to avoid localStorage quota
+        // exhaustion — they are always reloaded from server history on next open.
         messages: Object.fromEntries(
-          Object.entries(s.messages).map(([k, v]) => [k, v.slice(-200)])
+          Object.entries(s.messages).map(([k, v]) => [
+            k,
+            v.filter((m) => !m.text.startsWith("__img__")).slice(-200),
+          ])
         ),
         unreadFrom: s.unreadFrom,
       }),
