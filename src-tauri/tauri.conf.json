@@ -15,7 +15,7 @@
         "title": "Disintea",
         "width": 800,
         "height": 600,
-        "drag_drop_enabled": false
+        "dragDropEnabled": false
       }
     ],
     "security": {
