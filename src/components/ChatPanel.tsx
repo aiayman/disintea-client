@@ -65,7 +65,7 @@ export function ChatPanel({ contactId, onBack, onCall, onSendMessage, onLoadHist
 
   return (
     <div
-      className="flex h-screen flex-col bg-gray-900 text-white"
+      className="flex h-full flex-col bg-gray-900 text-white"
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >

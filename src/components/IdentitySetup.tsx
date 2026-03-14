@@ -14,7 +14,7 @@ export function IdentitySetup() {
   };
 
   return (
-    <div className="flex h-screen items-center justify-center bg-gray-900">
+    <div className="flex h-full items-center justify-center bg-gray-900">
       <div className="w-full max-w-sm rounded-2xl bg-gray-800 p-8 shadow-xl">
         <h1 className="mb-2 text-2xl font-bold text-white">Welcome to Disintea</h1>
         <p className="mb-6 text-sm text-gray-400">

@@ -33,7 +33,7 @@ export function ContactList({ onStartChat, onStartCall, onAddContact, onRemoveCo
       : "bg-red-500";
 
   return (
-    <div className="flex h-screen flex-col bg-gray-900 text-white">
+    <div className="flex h-full flex-col bg-gray-900 text-white">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-gray-700 px-4 py-3">
         <div className="flex items-center gap-2">

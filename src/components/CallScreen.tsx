@@ -104,7 +104,7 @@ export function CallScreen({ remoteStreams, onHangUp, onToggleMute, onToggleMode
   // ── Screen-share full-screen layout ─────────────────────────────────
   if (anyRemoteHasVideo) {
     return (
-      <div className="flex h-screen flex-col bg-black text-white overflow-hidden">
+      <div className="flex h-full flex-col bg-black text-white overflow-hidden">
         {/* Hidden audio elements */}
         {[...remoteStreams.entries()].map(([peerId, stream]) => (
           <RemoteAudio key={peerId} stream={stream} />
@@ -191,7 +191,7 @@ export function CallScreen({ remoteStreams, onHangUp, onToggleMute, onToggleMode
 
   // ── Standard audio-call layout ──────────────────────────────────────
   return (
-    <div className="flex h-screen flex-col items-center justify-between bg-gray-900 py-8 text-white overflow-hidden">
+    <div className="flex h-full flex-col items-center justify-between bg-gray-900 py-8 text-white overflow-hidden">
       {/* Hidden audio for all peers */}
       {[...remoteStreams.entries()].map(([peerId, stream]) => (
         <RemoteAudio key={peerId} stream={stream} />

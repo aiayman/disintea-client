@@ -14,6 +14,7 @@ import { Settings } from "./components/Settings";
 import { isTauri } from "./lib/tauri-compat";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { TitleBar } from "./components/TitleBar";
 
 export default function App() {
   const [
@@ -232,46 +233,13 @@ export default function App() {
   }, [sendRemoveContact, removeContact]);
 
   // ── Render ─────────────────────────────────────────────────────────────
-  if (!userId) return <IdentitySetup />;
-
-  if (callState === "calling" || callState === "in_call") {
-    return (
-      <CallScreen
-        remoteStreams={remoteStreams}
-        onHangUp={handleHangUp}
-        onToggleMute={handleToggleMute}
-        onToggleMode={handleToggleMode}
-        setMicEnabled={setMicEnabled}
-        onToggleScreenShare={async () => {
-          const { isScreenSharing } = useAppStore.getState();
-          if (isScreenSharing) { await stopScreenShare(); }
-          else { try { await startScreenShare(); } catch (e) { console.error("[screen]", e); } }
-        }}
-      />
-    );
-  }
-
-  if (activeChat) {
-    return (
-      <>
-        <ChatPanel
-          contactId={activeChat}
-          onBack={() => setActiveChat(null)}
-          onCall={handleStartCall}
-          onSendMessage={(to, text, msgId) => sendChatMessage(to, text, msgId)}
-          onLoadHistory={(id) => sendGetHistory(id)}
-        />
-        {callState === "ringing" && (
-          <IncomingCallOverlay onAccept={handleAcceptCall} onReject={handleRejectCall} />
-        )}
-      </>
-    );
-  }
-
   return (
-    <>
+    <div className="flex flex-col h-screen bg-gray-900 overflow-hidden">
+      <TitleBar />
+
+      {/* Update banner — shown on all screens */}
       {pendingUpdate && (
-        <div className="fixed top-0 inset-x-0 z-50 flex items-center justify-between gap-3 bg-indigo-600 px-4 py-2.5 text-sm text-white shadow-lg">
+        <div className="shrink-0 flex items-center justify-between gap-3 bg-indigo-600 px-4 py-2 text-sm text-white">
           <span>Update {pendingUpdate.version} is available</span>
           <button
             onClick={handleInstallUpdate}
@@ -282,24 +250,60 @@ export default function App() {
           </button>
         </div>
       )}
-      <ContactList
-        userId={userId}
-        onStartChat={setActiveChat}
-        onStartCall={handleStartCall}
-        onAddContact={sendAddContact}
-        onRemoveContact={handleRemoveContact}
-        onOpenSettings={() => setShowSettings(true)}
-      />
-      {callState === "ringing" && (
-        <IncomingCallOverlay onAccept={handleAcceptCall} onReject={handleRejectCall} />
-      )}
-      {showSettings && (
-        <Settings
-          onClose={() => setShowSettings(false)}
-          setMicEnabled={setMicEnabled}
-          onReconnect={handleReconnect}
-        />
-      )}
-    </>
+
+      {/* Main content */}
+      <div className="flex-1 min-h-0 overflow-hidden">
+        {!userId ? (
+          <IdentitySetup />
+        ) : (callState === "calling" || callState === "in_call") ? (
+          <CallScreen
+            remoteStreams={remoteStreams}
+            onHangUp={handleHangUp}
+            onToggleMute={handleToggleMute}
+            onToggleMode={handleToggleMode}
+            setMicEnabled={setMicEnabled}
+            onToggleScreenShare={async () => {
+              const { isScreenSharing } = useAppStore.getState();
+              if (isScreenSharing) { await stopScreenShare(); }
+              else { try { await startScreenShare(); } catch (e) { console.error("[screen]", e); } }
+            }}
+          />
+        ) : activeChat ? (
+          <>
+            <ChatPanel
+              contactId={activeChat}
+              onBack={() => setActiveChat(null)}
+              onCall={handleStartCall}
+              onSendMessage={(to, text, msgId) => sendChatMessage(to, text, msgId)}
+              onLoadHistory={(id) => sendGetHistory(id)}
+            />
+            {callState === "ringing" && (
+              <IncomingCallOverlay onAccept={handleAcceptCall} onReject={handleRejectCall} />
+            )}
+          </>
+        ) : (
+          <>
+            <ContactList
+              userId={userId}
+              onStartChat={setActiveChat}
+              onStartCall={handleStartCall}
+              onAddContact={sendAddContact}
+              onRemoveContact={handleRemoveContact}
+              onOpenSettings={() => setShowSettings(true)}
+            />
+            {callState === "ringing" && (
+              <IncomingCallOverlay onAccept={handleAcceptCall} onReject={handleRejectCall} />
+            )}
+            {showSettings && (
+              <Settings
+                onClose={() => setShowSettings(false)}
+                setMicEnabled={setMicEnabled}
+                onReconnect={handleReconnect}
+              />
+            )}
+          </>
+        )}
+      </div>
+    </div>
   );
 }
