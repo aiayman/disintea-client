@@ -117,6 +117,11 @@ export function useSignaling(callbacks: SignalingCallbacks) {
 
         case "user_offline":
           store.setContactOnline(msg.user_id as string, false);
+          // If the peer we're in a call with went offline, treat it as a hang-up
+          // so we don't get stuck on a frozen CallScreen
+          if (store.callPeerId === msg.user_id as string && store.callState !== "idle") {
+            callbacksRef.current.onHangUp(msg.user_id as string);
+          }
           break;
 
         // Server confirmed we added a contact

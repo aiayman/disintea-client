@@ -75,6 +75,16 @@ export function useWebRTC() {
         composite.addTrack(evt.track);
       }
       const cs = composite;
+
+      // When the remote stops sending media on this track (e.g. replaceTrack(null)
+      // or removeTrack on the sender), the receiver's track fires 'mute'.
+      // Re-render so anyRemoteHasVideo picks up the change.
+      evt.track.onmute = () => {
+        setRemoteStreams((prev) => new Map(prev).set(peerId, cs));
+      };
+      evt.track.onunmute = () => {
+        setRemoteStreams((prev) => new Map(prev).set(peerId, cs));
+      };
       evt.track.onended = () => {
         cs.removeTrack(evt.track);
         setRemoteStreams((prev) => new Map(prev).set(peerId, cs));
@@ -116,13 +126,21 @@ export function useWebRTC() {
     };
 
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === "failed" || pc.connectionState === "closed") {
+      const s = pc.connectionState;
+      if (s === "failed" || s === "closed" || s === "disconnected") {
         pcsRef.current.delete(peerId);
+        remoteCompositeRef.current.delete(peerId);
         setRemoteStreams((prev) => {
           const next = new Map(prev);
           next.delete(peerId);
           return next;
         });
+        // Auto-reset app call state if this was our active call peer
+        const appState = useAppStore.getState();
+        if (appState.callPeerId === peerId && appState.callState !== "idle") {
+          appState.setScreenSharing(false);
+          appState.resetCall();
+        }
       }
     };
 
@@ -253,11 +271,9 @@ export function useWebRTC() {
     for (const pc of pcsRef.current.values()) {
       for (const sender of pc.getSenders()) {
         if (sender.track && screenTrackIds.has(sender.track.id)) {
-          if (sender.track.kind === "video") {
-            await sender.replaceTrack(null); // remove video cleanly
-          } else {
-            pc.removeTrack(sender); // remove screen audio sender
-          }
+          // removeTrack for both video and audio — this triggers renegotiation
+          // so the receiver knows the screen share ended (track fires 'mute')
+          pc.removeTrack(sender);
         }
       }
     }

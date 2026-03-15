@@ -21,7 +21,7 @@ function RemoteVideo({ stream, label, fill }: { stream: MediaStream; label?: str
     ref.current.srcObject = stream;
     ref.current.play().catch(() => {});
   }, [stream]);
-  const hasVideo = stream.getVideoTracks().some((t) => t.readyState === "live");
+  const hasVideo = stream.getVideoTracks().some((t) => t.readyState === "live" && !t.muted);
   if (!hasVideo) return null;
   if (fill) {
     return (
@@ -60,8 +60,7 @@ export function CallScreen({ remoteStreams, onHangUp, onToggleMute, onToggleMode
   const inCall = callState === "in_call";
 
   // ── Call duration timer ──────────────────────────────────────────────
-  const [elapsed, setElapsed] = useState(0);
-  const startRef = useRef<number>(0);
+  const [elapsed, setElapsed] = useState(0);  const [dismissedRemoteVideo, setDismissedRemoteVideo] = useState(false);  const startRef = useRef<number>(0);
   useEffect(() => {
     if (callState !== "in_call") { setElapsed(0); return; }
     startRef.current = Date.now();
@@ -97,9 +96,17 @@ export function CallScreen({ remoteStreams, onHangUp, onToggleMute, onToggleMode
   };
 
   // True when at least one remote peer is sending live video (screen share)
-  const anyRemoteHasVideo = inCall && [...remoteStreams.entries()].some(
-    ([, s]) => s.getVideoTracks().some((t) => t.readyState === "live")
+  const anyRemoteHasVideo = inCall && !dismissedRemoteVideo && [...remoteStreams.entries()].some(
+    ([, s]) => s.getVideoTracks().some((t) => t.readyState === "live" && !t.muted)
   );
+
+  // Reset dismiss when remote video goes away (so next share shows up again)
+  const hasLiveRemoteVideo = inCall && [...remoteStreams.entries()].some(
+    ([, s]) => s.getVideoTracks().some((t) => t.readyState === "live" && !t.muted)
+  );
+  useEffect(() => {
+    if (!hasLiveRemoteVideo) setDismissedRemoteVideo(false);
+  }, [hasLiveRemoteVideo]);
 
   // ── Screen-share full-screen layout ─────────────────────────────────
   if (anyRemoteHasVideo) {
@@ -170,9 +177,9 @@ export function CallScreen({ remoteStreams, onHangUp, onToggleMute, onToggleMode
           )}
 
           <button
-            onClick={onToggleScreenShare}
+            onClick={isScreenSharing ? onToggleScreenShare : () => setDismissedRemoteVideo(true)}
             className="flex h-12 w-12 items-center justify-center rounded-full bg-green-600 hover:bg-green-500 text-white text-xl shadow-lg transition active:scale-95"
-            title="Stop Screen Share"
+            title={isScreenSharing ? "Stop Screen Share" : "Stop Watching"}
           >
             🖥
           </button>
